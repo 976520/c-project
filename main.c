@@ -41,7 +41,7 @@ int main() {
 
     FILE* input_file = fopen("input.txt", "r");
     if (input_file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening input.txt");
         return 1;
     }
     printf("Reading input.txt complete\n");
@@ -52,7 +52,7 @@ int main() {
 
     char* text = (char*)malloc(file_size + 1);
     if (text == NULL) {
-        perror("메모리 malloc 오류");
+        perror("Error allocating memory for input text");
         fclose(input_file);
         return 1;
     }
@@ -66,7 +66,7 @@ int main() {
 
     FILE* output_file = fopen("output.txt", "w");
     if (output_file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening output.txt");
         free(text);
         return 1;
     }
@@ -92,7 +92,7 @@ int main() {
         return 1;
     }
 
-    printf("Training Skip-Gram model %d: \n", pair_count);
+    printf("Training Skip-Gram model with %d pairs\n", pair_count);
 
     train(pairs, pair_count, VOCAB_SIZE);
 
@@ -150,7 +150,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) {
 
     for (int epoch = 0; epoch < EPOCHS; epoch++) {
         for (int i = 0; i < pair_count; i++) {
-            printf("Epoch %d: softmax %d\n", epoch + 1, i);
+            printf("Epoch %d: Processing pair %d/%d\n", epoch + 1, i + 1, pair_count);
             int target = pairs[i].target;
             int context = pairs[i].context;
 
@@ -169,7 +169,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) {
             }
         }
 
-        printf("Epoch %d completed. \n", epoch + 1);
+        printf("Epoch %d completed.\n", epoch + 1);
     }
 
     save_vectors(input_vectors, "vector.txt");
@@ -178,7 +178,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) {
 Pair* generate_pairs(const char* filename, int* pair_count) {
     FILE* file = fopen(filename, "r");
     if (file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening tokenized.txt");
         return NULL;
     }
 
@@ -189,9 +189,19 @@ Pair* generate_pairs(const char* filename, int* pair_count) {
     while (fgets(line, sizeof(line), file)) {
         int index;
         char word[256];
-        sscanf(line, "%d %s", &index, word);
+        if (sscanf(line, "%d %s", &index, word) != 2) {
+            fprintf(stderr, "Error parsing line: %s\n", line);
+            free(words);
+            fclose(file);
+            return NULL;
+        }
 
         words = (int*)realloc(words, sizeof(int) * (word_count + 1));
+        if (words == NULL) {
+            perror("Error reallocating memory for words");
+            fclose(file);
+            return NULL;
+        }
         words[word_count] = index;
         word_count++;
     }
@@ -204,6 +214,11 @@ Pair* generate_pairs(const char* filename, int* pair_count) {
         for (int j = -WINDOW_SIZE; j <= WINDOW_SIZE; j++) {
             if (j != 0 && (i + j) >= 0 && (i + j) < word_count) {
                 pairs = (Pair*)realloc(pairs, sizeof(Pair) * (*pair_count + 1));
+                if (pairs == NULL) {
+                    perror("Error reallocating memory for pairs");
+                    free(words);
+                    return NULL;
+                }
                 pairs[*pair_count].target = words[i];
                 pairs[*pair_count].context = words[i + j];
                 (*pair_count)++;
@@ -237,7 +252,7 @@ void split_sentences(const char* text, FILE* output_file) {
                 char* sentence = (char*)malloc(len + 1);
 
                 if (sentence == NULL) {
-                    perror("메모리 할당 오류");
+                    perror("Error allocating memory for sentence");
                     return;
                 }
 
@@ -261,7 +276,7 @@ void split_sentences(const char* text, FILE* output_file) {
         if (len > 0) {
             char* sentence = (char*)malloc(len + 1);
             if (sentence == NULL) {
-                perror("메모리 할당 오류");
+                perror("Error allocating memory for sentence");
                 return;
             }
 
@@ -274,11 +289,10 @@ void split_sentences(const char* text, FILE* output_file) {
     }
 }
 
-
 int tokenize() {
     FILE* input_file = fopen("output.txt", "r");
     if (input_file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening output.txt");
         return 1;
     }
 
@@ -288,7 +302,7 @@ int tokenize() {
 
     char* text = (char*)malloc(file_size + 1);
     if (text == NULL) {
-        perror("메모리 malloc 오류");
+        perror("Error allocating memory for tokenization");
         fclose(input_file);
         return 1;
     }
@@ -300,7 +314,7 @@ int tokenize() {
 
     FILE* output_file = fopen("tokenized.txt", "w");
     if (output_file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening tokenized.txt");
         free(text);
         return 1;
     }
@@ -317,7 +331,7 @@ void tokenize_words(const char* text, FILE* output_file) {
     const char* delimiters = " \t\r\n.,!?\"'";
     char* copy = strdup(text);
     if (copy == NULL) {
-        perror("메모리 strdup 오류");
+        perror("Error duplicating text for tokenization");
         return;
     }
 
@@ -336,7 +350,7 @@ void tokenize_words(const char* text, FILE* output_file) {
 void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename) {
     FILE* file = fopen(filename, "w");
     if (file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening vector.txt");
         return;
     }
 
@@ -354,7 +368,7 @@ void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filena
 void compute_tfidf(const char* filename, Word* words, int* word_count) {
     FILE* file = fopen(filename, "r");
     if (file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening tokenized.txt for TF-IDF computation");
         return;
     }
 
@@ -365,13 +379,33 @@ void compute_tfidf(const char* filename, Word* words, int* word_count) {
     // Read documents and store them in memory
     while (fgets(line, sizeof(line), file)) {
         docs = realloc(docs, sizeof(char*) * (doc_count + 1));
+        if (docs == NULL) {
+            perror("Error reallocating memory for documents");
+            fclose(file);
+            return;
+        }
         docs[doc_count] = strdup(line);
+        if (docs[doc_count] == NULL) {
+            perror("Error duplicating line for document storage");
+            fclose(file);
+            return;
+        }
         doc_count++;
     }
     fclose(file);
 
     int* term_freqs = calloc(VOCAB_SIZE, sizeof(int));
     int* doc_freqs = calloc(VOCAB_SIZE, sizeof(int));
+    if (term_freqs == NULL || doc_freqs == NULL) {
+        perror("Error allocating memory for term/document frequencies");
+        free(term_freqs);
+        free(doc_freqs);
+        for (int i = 0; i < doc_count; i++) {
+            free(docs[i]);
+        }
+        free(docs);
+        return;
+    }
     int total_terms = 0;
 
     // Calculate term frequencies
@@ -423,7 +457,7 @@ void compute_tfidf(const char* filename, Word* words, int* word_count) {
 void save_tfidf(Word* words, int word_count, const char* filename) {
     FILE* file = fopen(filename, "w");
     if (file == NULL) {
-        perror("파일 fopen 오류");
+        perror("Error opening weight.txt");
         return;
     }
 
