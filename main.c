@@ -6,9 +6,10 @@
     #include <math.h>
     #include <time.h>
     #include <Windows.h>
+#include <omp.h>
 
-    #define VOCAB_SIZE 10000
-    #define EMBEDDING_SIZE 1000
+    #define VOCAB_SIZE 1000
+    #define EMBEDDING_SIZE 100
     #define WINDOW_SIZE 8
     #define LEARNING_RATE 0.01
     #define EPOCHS 50
@@ -150,6 +151,7 @@
         initialize_vectors(output_vectors);
 
         for (int epoch = 0; epoch < EPOCHS; epoch++) {
+#pragma omp parallel for schedule(dynamic)
             for (int i = 0; i < pair_count; i++) {
                 int target = pairs[i].target;
                 int context = pairs[i].context;
@@ -164,11 +166,14 @@
 
                 for (int k = 0; k < EMBEDDING_SIZE; k++) {
                     double error = (output_prob[context] - 1.0);
+#pragma omp atomic
                     input_vectors[target][k] -= LEARNING_RATE * error * output_vectors[context][k];
+#pragma omp atomic
                     output_vectors[context][k] -= LEARNING_RATE * error * input_vectors[target][k];
                 }
 
-                // Print progress bar
+                // 진행 바 출력
+#pragma omp single
                 print_progress_bar(epoch + 1, i + 1, pair_count);
             }
             printf("Epoch %d: completed.\n", epoch + 1);
@@ -187,6 +192,14 @@
         char line[256];
         int* words = NULL;
         int word_count = 0;
+        size_t words_alloc_size = 1024;
+
+        words = (int*)malloc(sizeof(int) * words_alloc_size);
+        if (words == NULL) {
+            perror("Error allocating memory for words");
+            fclose(file);
+            return NULL;
+        }
 
         while (fgets(line, sizeof(line), file)) {
             int index;
@@ -198,11 +211,14 @@
                 return NULL;
             }
 
-            words = (int*)realloc(words, sizeof(int) * (word_count + 1));
-            if (words == NULL) {
-                perror("Error reallocating memory for words");
-                fclose(file);
-                return NULL;
+            if (word_count >= words_alloc_size) {
+                words_alloc_size *= 2;
+                words = (int*)realloc(words, sizeof(int) * words_alloc_size);
+                if (words == NULL) {
+                    perror("Error reallocating memory for words");
+                    fclose(file);
+                    return NULL;
+                }
             }
             words[word_count] = index;
             word_count++;
@@ -210,16 +226,27 @@
         fclose(file);
 
         Pair* pairs = NULL;
+        size_t pairs_alloc_size = 1024;
         *pair_count = 0;
+
+        pairs = (Pair*)malloc(sizeof(Pair) * pairs_alloc_size);
+        if (pairs == NULL) {
+            perror("Error allocating memory for pairs");
+            free(words);
+            return NULL;
+        }
 
         for (int i = 0; i < word_count; i++) {
             for (int j = -WINDOW_SIZE; j <= WINDOW_SIZE; j++) {
                 if (j != 0 && (i + j) >= 0 && (i + j) < word_count) {
-                    pairs = (Pair*)realloc(pairs, sizeof(Pair) * (*pair_count + 1));
-                    if (pairs == NULL) {
-                        perror("Error reallocating memory for pairs");
-                        free(words);
-                        return NULL;
+                    if (*pair_count >= pairs_alloc_size) {
+                        pairs_alloc_size *= 2;
+                        pairs = (Pair*)realloc(pairs, sizeof(Pair) * pairs_alloc_size);
+                        if (pairs == NULL) {
+                            perror("Error reallocating memory for pairs");
+                            free(words);
+                            return NULL;
+                        }
                     }
                     pairs[*pair_count].target = words[i];
                     pairs[*pair_count].context = words[i + j];
@@ -231,6 +258,8 @@
         free(words);
         return pairs;
     }
+
+
 
     void split_sentences(const char* text, FILE* output_file) {
         bool in_quotes = false;
