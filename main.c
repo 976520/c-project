@@ -64,11 +64,11 @@ int main() {
 
 	fclose(input_file);
 
-	printf("Splitting sentences into output.txt\n");
+	printf("Splitting sentences into sentence_tokenized.txt\n");
 
-	FILE* output_file = fopen("output.txt", "w");
+	FILE* output_file = fopen("sentence_tokenized.txt", "w");
 	if (output_file == NULL) {
-		perror("Error opening output.txt");
+		perror("Error opening sentence_tokenized.txt");
 		free(text);
 		return 1;
 	}
@@ -321,9 +321,9 @@ void split_sentences(const char* text, FILE* output_file) {
 }
 
 int tokenize() {
-	FILE* input_file = fopen("output.txt", "r");
+	FILE* input_file = fopen("sentence_tokenized.txt", "r");
 	if (input_file == NULL) {
-		perror("Error opening output.txt");
+		perror("Error opening sentence_tokenized.txt");
 		return 1;
 	}
 
@@ -533,3 +533,4 @@ void print_progress_bar(int epoch, int current, int total) {
 		printf("Epoch %d: completed.                                                          \r", epoch);
 	}
 }
+
