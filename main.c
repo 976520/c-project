@@ -24,6 +24,11 @@ typedef struct {
 	double tfidf;
 } Word;
 
+typedef struct {
+	char sentence[1024];
+	double vector[EMBEDDING_SIZE];
+} SentenceVector;
+
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double random_double();
 void softmax(double* input, double* output, int size);
@@ -534,3 +539,52 @@ void print_progress_bar(int epoch, int current, int total) {
 	}
 }
 
+void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
+	FILE* file = fopen(filename, "r");
+	if (file == NULL) {
+		perror("Error opening sentence_tokenized.txt");
+		return;
+	}
+
+	char line[1024];
+	*sentence_count = 0;
+	while (fgets(line, sizeof(line), file)) {
+		strncpy(sentence_vectors[*sentence_count].sentence, line, sizeof(line));
+
+		double vector_sum[EMBEDDING_SIZE] = { 0.0 };
+		int word_index;
+		char word[256];
+		char* token = strtok(line, " \n");
+		int word_count_in_sentence = 0;
+		while (token != NULL) {
+			sscanf(token, "%d", &word_index);
+			for (int i = 0; i < EMBEDDING_SIZE; i++) {
+				vector_sum[i] += words[word_index].tfidf * vector_sum[i];
+			}
+			word_count_in_sentence++;
+			token = strtok(NULL, " \n");
+		}
+		for (int i = 0; i < EMBEDDING_SIZE; i++) {
+			sentence_vectors[*sentence_count].vector[i] = vector_sum[i] / word_count_in_sentence;
+		}
+		(*sentence_count)++;
+	}
+	fclose(file);
+}
+
+void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename) {
+	FILE* file = fopen(filename, "w");
+	if (file == NULL) {
+		perror("Error opening sentence_vectors.txt");
+		return;
+	}
+
+	for (int i = 0; i < sentence_count; i++) {
+		fprintf(file, "%s", sentence_vectors[i].sentence);
+		for (int j = 0; j < EMBEDDING_SIZE; j++) {
+			fprintf(file, "%.10f ", sentence_vectors[i].vector[j]);
+		}
+		fprintf(file, "\n");
+	}
+	fclose(file);
+}
