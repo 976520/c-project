@@ -10,7 +10,7 @@
 
 #define VOCAB_SIZE 1000
 #define EMBEDDING_SIZE 100
-#define WINDOW_SIZE 8
+#define WINDOW_SIZE 2
 #define LEARNING_RATE 0.01
 #define EPOCHS 50
 
@@ -42,6 +42,8 @@ void compute_tfidf(const char* filename, Word* words, int* word_count);
 void save_tfidf(Word* words, int word_count, const char* filename);
 Word find_max_tfidf_word(Word* words, int word_count);
 void print_progress_bar(int epoch, int current, int total);
+void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
+void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
 
 int main() {
 	printf("Reading input.txt\n");
@@ -83,17 +85,17 @@ int main() {
 	fclose(output_file);
 	free(text);
 
-	printf("Tokenizing sentences into tokenized.txt\n");
+	printf("Tokenizing sentences into word_tokenized.txt\n");
 
 	if (tokenize() != 0) {
 		printf("Tokenization failed.\n");
 		return 1;
 	}
 
-	printf("Generating pairs from tokenized.txt\n");
+	printf("Generating pairs from word_tokenized.txt\n");
 
 	int pair_count;
-	Pair* pairs = generate_pairs("tokenized.txt", &pair_count);
+	Pair* pairs = generate_pairs("word_tokenized.txt", &pair_count);
 
 	if (pairs == NULL) {
 		return 1;
@@ -109,15 +111,21 @@ int main() {
 
 	Word words[VOCAB_SIZE];
 	int word_count = 0;
-	compute_tfidf("tokenized.txt", words, &word_count);
+	compute_tfidf("word_tokenized.txt", words, &word_count);
 	save_tfidf(words, word_count, "weight.txt");
 
 	Word max_word = find_max_tfidf_word(words, word_count);
 	printf("Word with highest TF-IDF: %s (%.6f)\n", max_word.word, max_word.tfidf);
 
+	printf("Computing sentence vectors\n");
+
+	SentenceVector sentence_vectors[1024];
+	int sentence_count = 0;
+	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
+	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
+
 	return 0;
 }
-
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]) {
 	for (int i = 0; i < VOCAB_SIZE; i++) {
 		for (int j = 0; j < EMBEDDING_SIZE; j++) {
@@ -190,7 +198,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) {
 Pair* generate_pairs(const char* filename, int* pair_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
-		perror("Error opening tokenized.txt");
+		perror("Error opening word_tokenized.txt");
 		return NULL;
 	}
 
@@ -348,9 +356,9 @@ int tokenize() {
 
 	fclose(input_file);
 
-	FILE* output_file = fopen("tokenized.txt", "w");
+	FILE* output_file = fopen("word_tokenized.txt", "w");
 	if (output_file == NULL) {
-		perror("Error opening tokenized.txt");
+		perror("Error opening word_tokenized.txt");
 		free(text);
 		return 1;
 	}
@@ -404,7 +412,7 @@ void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filena
 void compute_tfidf(const char* filename, Word* words, int* word_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
-		perror("Error opening tokenized.txt for TF-IDF computation");
+		perror("Error opening word_tokenized.txt for TF-IDF computation");
 		return;
 	}
 
@@ -582,7 +590,7 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 	for (int i = 0; i < sentence_count; i++) {
 		fprintf(file, "%s", sentence_vectors[i].sentence);
 		for (int j = 0; j < EMBEDDING_SIZE; j++) {
-			fprintf(file, "%.10f ", sentence_vectors[i].vector[j]);
+			fprintf(file, "%.6f ", sentence_vectors[i].vector[j]);
 		}
 		fprintf(file, "\n");
 	}
