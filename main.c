@@ -8,27 +8,31 @@
 #include <Windows.h>
 #include <omp.h>
 
-#define VOCAB_SIZE 1000
-#define EMBEDDING_SIZE 100
-#define WINDOW_SIZE 2
-#define LEARNING_RATE 0.01
-#define EPOCHS 50
+#define VOCAB_SIZE 1000 // 최대 어휘 크기 ?
+#define EMBEDDING_SIZE 100 // 단어 임베딩 크기
+#define WINDOW_SIZE 32 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
+#define LEARNING_RATE 0.01 // 학습률
+#define EPOCHS 50 // 에포크 수
 
+// 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct {
 	int target;
 	int context;
 } Pair;
 
+// 단어와 그 단어의 TF-IDF 값을 나타내는 구조체
 typedef struct {
 	char word[256];
 	double tfidf;
 } Word;
 
+// 문장과 그 그 문장의 벡터 표현을 나타내는 구조체
 typedef struct {
 	char sentence[1024];
 	double vector[EMBEDDING_SIZE];
 } SentenceVector;
 
+//
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double random_double();
 void softmax(double* input, double* output, int size);
@@ -42,90 +46,74 @@ void compute_tfidf(const char* filename, Word* words, int* word_count);
 void save_tfidf(Word* words, int word_count, const char* filename);
 Word find_max_tfidf_word(Word* words, int word_count);
 void print_progress_bar(int epoch, int current, int total);
-void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
-void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
 
 int main() {
+	// 0. 입력값
 	printf("Reading input.txt\n");
-
-	FILE* input_file = fopen("input.txt", "r");
+	FILE* input_file = fopen("input.txt", "r"); // input.txt 파일을 읽기 모드로
 	if (input_file == NULL) {
-		perror("Error opening input.txt");
+		perror("Error opening input.txt"); // 파일 열기 에러메시지
 		return 1;
 	}
 	printf("Reading input.txt complete\n");
-
-	fseek(input_file, 0, SEEK_END);
-	long file_size = ftell(input_file);
-	fseek(input_file, 0, SEEK_SET);
-
+	fseek(input_file, 0, SEEK_END); // 포인터를 파일 끝으로 --> 파일 크기
+	long file_size = ftell(input_file); // 파일 크기 저장
+	fseek(input_file, 0, SEEK_SET); // 포인터 원위치
+	// 메모리 할당 (파일크기로)
 	char* text = (char*)malloc(file_size + 1);
 	if (text == NULL) {
-		perror("Error allocating memory for input text");
+		perror("Error allocating memory for input text"); //메모리할당 에러메시지
 		fclose(input_file);
 		return 1;
 	}
-
-	fread(text, 1, file_size, input_file);
-	text[file_size] = '\0';
-
+	fread(text, 1, file_size, input_file); //text = input.txt 파일내용
+	text[file_size] = '\0'; // 문자열 끝에 널문자 추가
 	fclose(input_file);
 
+	/*1. 문장 토큰화*/
 	printf("Splitting sentences into sentence_tokenized.txt\n");
-
-	FILE* output_file = fopen("sentence_tokenized.txt", "w");
+	FILE* output_file = fopen("sentence_tokenized.txt", "w"); // sentence_tokenized.txt 파일을 쓰기 모드로
 	if (output_file == NULL) {
-		perror("Error opening sentence_tokenized.txt");
+		perror("Error opening sentence_tokenized.txt"); // 파일 열기 에러메시지
 		free(text);
 		return 1;
 	}
-	Sleep(500);
-	split_sentences(text, output_file);
+	split_sentences(text, output_file); // 문장분리함수호출
+	fclose(output_file); // 파일닫고
+	free(text); // 메모리 할당 해제
 
-	fclose(output_file);
-	free(text);
-
-	printf("Tokenizing sentences into word_tokenized.txt\n");
-
+	/*2. 단어 토큰화*/
+	printf("Tokenizing sentences into tokenized.txt\n");
 	if (tokenize() != 0) {
-		printf("Tokenization failed.\n");
+		printf("Tokenization failed.\n"); // 토큰화 에러메시지
 		return 1;
 	}
-
-	printf("Generating pairs from word_tokenized.txt\n");
-
+	/*2-1. 쌍연산*/
+	printf("Generating pairs from tokenized.txt\n");
 	int pair_count;
-	Pair* pairs = generate_pairs("word_tokenized.txt", &pair_count);
-
+	Pair* pairs = generate_pairs("tokenized.txt", &pair_count); // tokenized.txt에서 쌍 생성
 	if (pairs == NULL) {
 		return 1;
 	}
 
 	printf("Training Skip-Gram model with %d pairs\n", pair_count);
 
-	train(pairs, pair_count, VOCAB_SIZE);
-
+	train(pairs, pair_count, VOCAB_SIZE); // Skip-Gram 모델 학습
 	free(pairs);
 
 	printf("Computing TF-IDF values\n");
 
 	Word words[VOCAB_SIZE];
 	int word_count = 0;
-	compute_tfidf("word_tokenized.txt", words, &word_count);
-	save_tfidf(words, word_count, "weight.txt");
+	compute_tfidf("tokenized.txt", words, &word_count); // TF-IDF 값 계산합니다.
+	save_tfidf(words, word_count, "weight.txt"); // TF-IDF 값 weight.txt에 저장
 
-	Word max_word = find_max_tfidf_word(words, word_count);
+	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
 	printf("Word with highest TF-IDF: %s (%.6f)\n", max_word.word, max_word.tfidf);
-
-	printf("Computing sentence vectors\n");
-
-	SentenceVector sentence_vectors[1024];
-	int sentence_count = 0;
-	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
-	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
 
 	return 0;
 }
+
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]) {
 	for (int i = 0; i < VOCAB_SIZE; i++) {
 		for (int j = 0; j < EMBEDDING_SIZE; j++) {
@@ -198,7 +186,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) {
 Pair* generate_pairs(const char* filename, int* pair_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
-		perror("Error opening word_tokenized.txt");
+		perror("Error opening tokenized.txt");
 		return NULL;
 	}
 
@@ -356,9 +344,9 @@ int tokenize() {
 
 	fclose(input_file);
 
-	FILE* output_file = fopen("word_tokenized.txt", "w");
+	FILE* output_file = fopen("tokenized.txt", "w");
 	if (output_file == NULL) {
-		perror("Error opening word_tokenized.txt");
+		perror("Error opening tokenized.txt");
 		free(text);
 		return 1;
 	}
@@ -412,7 +400,7 @@ void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filena
 void compute_tfidf(const char* filename, Word* words, int* word_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
-		perror("Error opening word_tokenized.txt for TF-IDF computation");
+		perror("Error opening tokenized.txt for TF-IDF computation");
 		return;
 	}
 
@@ -590,7 +578,7 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 	for (int i = 0; i < sentence_count; i++) {
 		fprintf(file, "%s", sentence_vectors[i].sentence);
 		for (int j = 0; j < EMBEDDING_SIZE; j++) {
-			fprintf(file, "%.6f ", sentence_vectors[i].vector[j]);
+			fprintf(file, "%.10f ", sentence_vectors[i].vector[j]);
 		}
 		fprintf(file, "\n");
 	}
