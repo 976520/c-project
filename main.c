@@ -8,10 +8,10 @@
 #include <Windows.h>
 #include <omp.h>
 
-#define VOCAB_SIZE 10000 // 최대 어휘 크기 ?
+#define VOCAB_SIZE 1000 // 최대 어휘 크기 ?
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
-#define LEARNING_RATE 0.01 // 학습률
+#define LEARNING_RATE 0.1 // 학습률
 #define EPOCHS 50 // 에포크 수
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
@@ -32,7 +32,6 @@ typedef struct {
 	double vector[EMBEDDING_SIZE];
 } SentenceVector;
 
-//
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double random_double();
 void softmax(double* input, double* output, int size);
@@ -46,6 +45,9 @@ void compute_tfidf(const char* filename, Word* words, int* word_count);
 void save_tfidf(Word* words, int word_count, const char* filename);
 Word find_max_tfidf_word(Word* words, int word_count);
 void print_progress_bar(int epoch, int current, int total);
+void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
+void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
+
 
 int main() {
 	// 0. 입력값
@@ -111,8 +113,19 @@ int main() {
 	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
 	printf("Word with highest TF-IDF: %s (%.10f)\n", max_word.word, max_word.tfidf);
 
+	/*3. 문장 벡터 계산*/
+	printf("Computing sentence vectors\n");
+	SentenceVector sentence_vectors[1000];
+	int sentence_count = 0;
+	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
+
+	/*4. 문장 벡터 저장*/
+	printf("Saving sentence vectors to sentence_vectors.txt\n");
+	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
+
 	return 0;
 }
+
 
 /*
 	(+-0.5/EMBEDDING_SIZE 사이의 값으로) 각 단어 벡터를 랜덤하게 초기화
@@ -424,8 +437,10 @@ void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filena
 	fclose(file);
 }
 
-
-void compute_tfidf(const char* filename, Word* words, int* word_count) {
+/*
+	단어의 tfidf 값을 연산
+*/
+void compute_tfidf(const char* filename, Word* words, int* word_count) { //filename = 텍스트파일이름, words = 단어 배열
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening tokenized.txt for TF-IDF computation");
@@ -514,7 +529,11 @@ void compute_tfidf(const char* filename, Word* words, int* word_count) {
 	free(docs);
 }
 
-void save_tfidf(Word* words, int word_count, const char* filename) {
+
+/*
+	계산된 tfidf 값을 파일로 저장
+*/
+void save_tfidf(Word* words, int word_count, const char* filename) { //상동
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
 		perror("Error opening weight.txt");
@@ -528,6 +547,9 @@ void save_tfidf(Word* words, int word_count, const char* filename) {
 	fclose(file);
 }
 
+/*
+	tfidf 값이 가장 높은 단어 탐색
+*/
 Word find_max_tfidf_word(Word* words, int word_count) {
 	Word max_word = words[0];
 	for (int i = 1; i < word_count; i++) {
@@ -538,6 +560,9 @@ Word find_max_tfidf_word(Word* words, int word_count) {
 	return max_word;
 }
 
+/*
+	프로그레스바 출력
+*/
 void print_progress_bar(int epoch, int current, int total) {
 	int bar_width = 50;
 	float progress = (float)current / total;
@@ -563,6 +588,7 @@ void print_progress_bar(int epoch, int current, int total) {
 	}
 }
 
+/*각 문장의 벡터를 계산하여 sentence_vectors 배열에 저장*/
 void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
@@ -596,6 +622,9 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 	fclose(file);
 }
 
+/*
+	문장 벡터를 파일에 저장
+*/
 void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename) {
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
