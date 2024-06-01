@@ -113,14 +113,14 @@ int main() {
 	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
 	printf("Word with highest TF-IDF: %s (%.10f)\n", max_word.word, max_word.tfidf);
 
-	/* 왜???????
+
 	printf("Computing sentence vectors\n");
-	SentenceVector sentence_vectors[1000];
+	SentenceVector sentence_vectors[100];
 	int sentence_count = 0;
 	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
 	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
-	*/
+
 
 	return 0;
 }
