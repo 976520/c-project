@@ -113,22 +113,21 @@ int main() {
 	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
 	printf("Word with highest TF-IDF: %s (%.10f)\n", max_word.word, max_word.tfidf);
 
-	/*3. 문장 벡터 계산*/
+	/* 왜???????
 	printf("Computing sentence vectors\n");
 	SentenceVector sentence_vectors[1000];
 	int sentence_count = 0;
 	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
-
-	/*4. 문장 벡터 저장*/
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
 	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
+	*/
 
 	return 0;
 }
 
 
 /*
-	(+-0.5/EMBEDDING_SIZE 사이의 값으로) 각 단어 벡터를 랜덤하게 초기화
+	(+-0.5/EMBEDDING_SIZE 사이의 값으로) 각 단어 벡터를 초기화
 */
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]) { //vectors <- 초기화할 벡터 배열
 	for (int i = 0; i < VOCAB_SIZE; i++) {
@@ -293,7 +292,7 @@ Pair* generate_pairs(const char* filename, int* pair_count) { //filename = 읽�
 /*
 	문장 단위로 토큰화
 */
-void split_sentences(const char* text, FILE* output_file) { //text = 입력 텍스트, output_file = 출력 파일
+void split_sentences(const char* text, FILE* output_file) {
 	bool in_quotes = false;
 	const char* start = text;
 	const char* ptr = text;
@@ -322,7 +321,6 @@ void split_sentences(const char* text, FILE* output_file) { //text = 입력 텍�
 				strncpy(sentence, start, len);
 				sentence[len] = '\0';
 				fprintf(output_file, "%d %s\n", sentence_num, sentence);
-				printf("split_sentences: %d\n", sentence_num);
 				free(sentence);
 				sentence_num++;
 			}
@@ -346,11 +344,11 @@ void split_sentences(const char* text, FILE* output_file) { //text = 입력 텍�
 			strncpy(sentence, start, len);
 			sentence[len] = '\0';
 			fprintf(output_file, "%d %s\n", sentence_num, sentence);
-			printf("split_sentences: %d\n", sentence_num);
 			free(sentence);
 		}
 	}
 }
+
 
 /*
 	sentence_tokenized.txt 를 읽어서 각 문장을 단어로 분리하여 tokenized.txt에 저장
@@ -599,11 +597,11 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 	char line[1024];
 	*sentence_count = 0;
 	while (fgets(line, sizeof(line), file)) {
-		strncpy(sentence_vectors[*sentence_count].sentence, line, sizeof(line));
+		// 문장을 복사하여 버퍼 오버플로우 방지
+		strncpy(sentence_vectors[*sentence_count].sentence, line, sizeof(sentence_vectors[*sentence_count].sentence));
 
 		double vector_sum[EMBEDDING_SIZE] = { 0.0 };
 		int word_index;
-		char word[256];
 		char* token = strtok(line, " \n");
 		int word_count_in_sentence = 0;
 		while (token != NULL) {
@@ -621,6 +619,7 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 	}
 	fclose(file);
 }
+
 
 /*
 	문장 벡터를 파일에 저장
