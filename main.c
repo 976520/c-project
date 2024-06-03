@@ -12,7 +12,7 @@
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define EPOCHS 50 // 에포크 수
+#define EPOCHS 100 // 에포크 수
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct {
@@ -24,7 +24,9 @@ typedef struct {
 typedef struct {
 	char word[256];
 	double tfidf;
+	double vector[EMBEDDING_SIZE];
 } Word;
+
 
 // 문장과 그 그 문장의 벡터 표현을 나타내는 구조체
 typedef struct {
@@ -47,7 +49,6 @@ Word find_max_tfidf_word(Word* words, int word_count);
 void print_progress_bar(int epoch, int current, int total);
 void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
 void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
-
 
 int main() {
 	// 0. 입력값
@@ -113,14 +114,12 @@ int main() {
 	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
 	printf("Word with highest TF-IDF: %s (%.10f)\n", max_word.word, max_word.tfidf);
 
-
 	printf("Computing sentence vectors\n");
 	SentenceVector sentence_vectors[100];
 	int sentence_count = 0;
 	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
 	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
-
 
 	return 0;
 }
@@ -146,9 +145,11 @@ double random_double() {
 }
 
 /*
-	input에 대해 소프트맥스 함수로 확률 분포를 계산해서 output에 저장
+	input에 대해 소프트맥스 함수로 확률 분포를 계산해서 output 변수에 저장
 */
 void softmax(double* input, double* output, int size) { //input = 입력벡터, output = 출력벡터, size = 벡터크기
+
+	//overflow 방지를 위해 입력벡터의 최대값 도출
 	double max = input[0];
 	for (int i = 1; i < size; i++) {
 		if (input[i] > max) {
@@ -156,14 +157,16 @@ void softmax(double* input, double* output, int size) { //input = 입력벡터, 
 		}
 	}
 
+	// 지수함수 및 합계 계산 --> 중심적인 softmax 처리과정 --> 연산량 과다
 	double sum = 0.0;
 	for (int i = 0; i < size; i++) {
-		output[i] = exp(input[i] - max); //softmax 계산
+		output[i] = exp(input[i] - max);
 		sum += output[i];
 	}
 
+	// softmax 처리결가ㅗ를 0과 1 사이의 확률로 나타내지도록 정규화
 	for (int i = 0; i < size; i++) {
-		output[i] /= sum; //softmax 계산 결과 정규화
+		output[i] /= sum;
 	}
 }
 
@@ -177,7 +180,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 �
 	initialize_vectors(output_vectors); //출려 ㄱ벡터 초기화
 
 	for (int epoch = 0; epoch < EPOCHS; epoch++) {
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic) //병렬 처리
 		for (int i = 0; i < pair_count; i++) {
 			int target = pairs[i].target;
 			int context = pairs[i].context;
@@ -600,23 +603,24 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 		// 문장을 복사하여 버퍼 오버플로우 방지
 		strncpy(sentence_vectors[*sentence_count].sentence, line, sizeof(sentence_vectors[*sentence_count].sentence));
 
-		double vector_sum[EMBEDDING_SIZE] = { 0.0 };
+		double vector_sum[EMBEDDING_SIZE] = { 0.0 }; // 벡터 합 초기화
 		int word_index;
 		char* token = strtok(line, " \n");
 		int word_count_in_sentence = 0;
 		while (token != NULL) {
 			sscanf(token, "%d", &word_index);
 			for (int i = 0; i < EMBEDDING_SIZE; i++) {
-				vector_sum[i] += words[word_index].tfidf * vector_sum[i];
+				vector_sum[i] += words[word_index].tfidf * words[word_index].vector[i];
 			}
 			word_count_in_sentence++;
 			token = strtok(NULL, " \n");
 		}
 		for (int i = 0; i < EMBEDDING_SIZE; i++) {
-			sentence_vectors[*sentence_count].vector[i] = vector_sum[i] / word_count_in_sentence;
+			sentence_vectors[*sentence_count].vector[i] = vector_sum[i] / word_count_in_sentence; // 벡터의 평균 계산
 		}
 		(*sentence_count)++;
 	}
+
 	fclose(file);
 }
 
