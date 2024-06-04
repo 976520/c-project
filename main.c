@@ -8,11 +8,11 @@
 #include <Windows.h>
 #include <omp.h>
 
-#define VOCAB_SIZE 1000 // 최대 어휘 크기
+#define VOCAB_SIZE 600 // 최대 어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
-#define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
+#define WINDOW_SIZE 1 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define EPOCHS 100 // 에포크 수
+#define EPOCHS 12 // 에포크 수
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct {
@@ -27,8 +27,7 @@ typedef struct {
 	double vector[EMBEDDING_SIZE];
 } Word;
 
-
-// 문장과 그 그 문장의 벡터 표현을 나타내는 구조체
+// 문장과 문장의 벡터 표현을 나타내는 구조체
 typedef struct {
 	char sentence[1024];
 	double vector[EMBEDDING_SIZE];
@@ -52,24 +51,24 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 
 int main() {
 	// 0. 입력값
-	printf("Reading input.txt\n");
-	FILE* input_file = fopen("input.txt", "r"); // input.txt 파일을 읽기 모드로
+	printf("Reading dataset.txt\n");
+	FILE* input_file = fopen("dataset.txt", "r"); // dataset.txt 파일을 읽기 모드로
 	if (input_file == NULL) {
-		perror("Error opening input.txt"); // 파일 열기 에러메시지
+		perror("Error opening dataset.txt"); // 파일 열기 에러메시지
 		return 1;
 	}
-	printf("Reading input.txt complete\n");
+	printf("Reading dataset.txt complete\n");
 	fseek(input_file, 0, SEEK_END); // 포인터를 파일 끝으로 --> 파일 크기
 	long file_size = ftell(input_file); // 파일 크기 저장
 	fseek(input_file, 0, SEEK_SET); // 포인터 원위치
 	// 메모리 할당 (파일크기로)
 	char* text = (char*)malloc(file_size + 1);
 	if (text == NULL) {
-		perror("Error allocating memory for input text"); //메모리할당 에러메시지
+		perror("Error allocating memory for dataset text"); //메모리할당 에러메시지
 		fclose(input_file);
 		return 1;
 	}
-	fread(text, 1, file_size, input_file); //text = input.txt 파일내용
+	fread(text, 1, file_size, input_file); //text = dataset.txt 파일내용
 	text[file_size] = '\0'; // 문자열 끝에 널문자 추가
 	fclose(input_file);
 
@@ -171,7 +170,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 �
 	initialize_vectors(output_vectors); //출려 ㄱ벡터 초기화
 
 	for (int epoch = 0; epoch < EPOCHS; epoch++) { //에포크 수(하이퍼파라미터) 만큼 연산 반복
-		#pragma omp parallel for schedule(dynamic) //병렬 처리
+		#pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적dynamic 작업 할당
 		for (int i = 0; i < pair_count; i++) {
 			// 타겟 단어와 문맥 단어(window로 잡은 단어)의 내적 계산
 			int target = pairs[i].target;
@@ -185,18 +184,18 @@ void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 �
 			double output_prob[VOCAB_SIZE];
 			softmax(dot_product, output_prob, VOCAB_SIZE);
 
-
 			for (int k = 0; k < EMBEDDING_SIZE; k++) {
 				double error = (output_prob[context] - 1.0); //예측된 확률과 실제 값을 비교 --> 오차 계산
-				//역전파를 이용해 입출력 벡터 업데이트 (얘도 연산량 ㅈ됨;;)
+				//그래디언트 역전파를 이용해 입출력 벡터 업데이트 (얘도 연산량 ㅈ됨;;)
 				#pragma omp atomic
+				//특정 메모리 위치에 대한 원자적 연산(뭔말인지모름) 수행 --> 여러 스레드의 동시 접근으로 인한 충돌 방지
 				input_vectors[target][k] -= LEARNING_RATE * error * output_vectors[context][k];
 				#pragma omp atomic
 				output_vectors[context][k] -= LEARNING_RATE * error * input_vectors[target][k];
 			}
 
 			// 프로그레스바 출력
-			#pragma omp single
+			#pragma omp single //<-- 단일 스레드에서 처리
 			print_progress_bar(epoch + 1, i + 1, pair_count);
 		}
 		printf("Epoch %d: completed.\n", epoch + 1);
@@ -281,7 +280,6 @@ Pair* generate_pairs(const char* filename, int* pair_count) { //filename = 읽�
 	free(words);
 	return pairs;
 }
-
 
 //문장 단위로 토큰화
 void split_sentences(const char* text, FILE* output_file) {
@@ -378,7 +376,6 @@ int tokenize() {
 	return 0;
 }
 
-
 //실질적힌 단어 토큰화 처리 수행
 void tokenize_words(const char* text, FILE* output_file) {
 	const char* delimiters = " \t\r\n.,!?\"'";
@@ -390,13 +387,14 @@ void tokenize_words(const char* text, FILE* output_file) {
 
 	char* token = strtok(copy, delimiters);
 	int word_count = 0;
-
+	printf("");
 	while (token != NULL) {
 		fprintf(output_file, "%d %s\n", word_count, token);
-		printf("tokenize_words: %d\n", word_count);
+		printf("\rtokenize_words: %d", word_count);
 		word_count++;
 		token = strtok(NULL, delimiters);
 	}
+	printf("\n");
 	free(copy);
 }
 
@@ -500,7 +498,6 @@ void compute_tfidf(const char* filename, Word* words, int* word_count) { //filen
 			(*word_count)++;
 		}
 	}
-
 	free(term_freqs);
 	free(doc_freqs);
 
@@ -578,20 +575,30 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 		int word_index;
 		char* token = strtok(line, " \n");
 		int word_count_in_sentence = 0;
+
 		while (token != NULL) {
-			sscanf(token, "%d", &word_index);
-			for (int i = 0; i < EMBEDDING_SIZE; i++) {
-				vector_sum[i] += words[word_index].tfidf * words[word_index].vector[i];
+			//읽어온 인덱스가 유효한 범위인지 확인
+			if (sscanf(token, "%d", &word_index) == 1 && word_index >= 0 && word_index < word_count) {
+				for (int i = 0; i < EMBEDDING_SIZE; i++) {
+					vector_sum[i] += words[word_index].tfidf * words[word_index].vector[i];
+				}
+				word_count_in_sentence++;
 			}
-			word_count_in_sentence++;
 			token = strtok(NULL, " \n");
 		}
-		for (int i = 0; i < EMBEDDING_SIZE; i++) {
-			sentence_vectors[*sentence_count].vector[i] = vector_sum[i] / word_count_in_sentence; // 벡터의 평균 계산
+
+		// 문장에서 단어가 하나 이상일 때만 평균 계산
+		if (word_count_in_sentence > 0) {
+			for (int i = 0; i < EMBEDDING_SIZE; i++) {
+				sentence_vectors[*sentence_count].vector[i] = vector_sum[i] / word_count_in_sentence; // 벡터의 평균 계산
+			}
+		} else {
+			// 문장이 비어있거나 유효한 단어 인덱스가 없는 경우 0 벡터로 유지
+			memset(sentence_vectors[*sentence_count].vector, 0, sizeof(sentence_vectors[*sentence_count].vector));
 		}
+
 		(*sentence_count)++;
 	}
-
 	fclose(file);
 }
 
@@ -612,3 +619,140 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 	}
 	fclose(file);
 }
+
+/*
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+// TreeNode 구조체
+typedef struct TreeNode {
+	double value;
+	struct TreeNode* left;
+	struct TreeNode* right;
+	int index;
+} TreeNode;
+
+// TreeNode 생성
+TreeNode* createNode(double value, int index) {
+	TreeNode* newNode = (TreeNode*)malloc(sizeof(TreeNode));
+	newNode->value = value;
+	newNode->left = NULL;
+	newNode->right = NULL;
+	newNode->index = index;
+	return newNode;
+}
+
+// 이진 트리를 구성
+TreeNode* buildTree(double* input, int size) {
+	// 우선순위 큐
+	TreeNode** heap = (TreeNode**)malloc(size * sizeof(TreeNode*));
+	for (int i = 0; i < size; i++) {
+		heap[i] = createNode(input[i], i);
+	}
+
+	// 힙 크기 변수
+	int heapSize = size;
+
+	// 힙 빌드
+	while (heapSize > 1) {
+		// 최소값 두 개 찾기
+		int min1 = 0, min2 = 1;
+		if (heap[min2]->value < heap[min1]->value) {
+			int temp = min1;
+			min1 = min2;
+			min2 = temp;
+		}
+		for (int i = 2; i < heapSize; i++) {
+			if (heap[i]->value < heap[min2]->value) {
+				if (heap[i]->value < heap[min1]->value) {
+					min2 = min1;
+					min1 = i;
+				} else {
+					min2 = i;
+				}
+			}
+		}
+
+		// 새로운 부모 노드 생성
+		TreeNode* parent = createNode(heap[min1]->value + heap[min2]->value, -1);
+		parent->left = heap[min1];
+		parent->right = heap[min2];
+
+		// 힙 업데이트
+		heap[min1] = parent;
+		heap[min2] = heap[heapSize - 1];
+		heapSize--;
+	}
+
+	TreeNode* root = heap[0];
+	free(heap);
+	return root;
+}
+
+// 트리를 탐색하며 softmax 확률을 계산
+void calculateProbabilities(TreeNode* node, double probability, double* output) {
+	if (node->left == NULL && node->right == NULL) {
+		output[node->index] = probability;
+		return;
+	}
+	if (node->left) {
+		calculateProbabilities(node->left, probability * 0.5, output);
+	}
+	if (node->right) {
+		calculateProbabilities(node->right, probability * 0.5, output);
+	}
+}
+
+// 트리 메모리 해제 함수
+void freeTree(TreeNode* node) {
+	if (node == NULL) return;
+	freeTree(node->left);
+	freeTree(node->right);
+	free(node);
+}
+
+void softmax(double* input, double* output, int size) {
+	// overflow 방지를 위해 입력벡터의 최대값 도출
+	double max = input[0];
+	for (int i = 1; i < size; i++) {
+		if (input[i] > max) {
+			max = input[i];
+		}
+	}
+
+	// 입력벡터를 트리에 사용할 벡터로 변환
+	for (int i = 0; i < size; i++) {
+		input[i] = exp(input[i] - max);
+	}
+
+	// 이진 트리를 구성
+	TreeNode* root = buildTree(input, size);
+
+	// 트리를 탐색하며 softmax 확률을 계산
+	for (int i = 0; i < size; i++) {
+		output[i] = 0.0;
+	}
+	calculateProbabilities(root, 1.0, output);
+
+	// 트리 메모리 해제
+	freeTree(root);
+}
+
+int main() {
+	double input[] = { 1.0, 2.0, 3.0, 4.0 };
+	int size = sizeof(input) / sizeof(input[0]);
+	double output[size];
+
+	softmax(input, output, size);
+
+	for (int i = 0; i < size; i++) {
+		printf("%f ", output[i]);
+	}
+	printf("\n");
+
+	return 0;
+}
+
+
+*/
