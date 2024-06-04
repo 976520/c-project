@@ -8,11 +8,11 @@
 #include <Windows.h>
 #include <omp.h>
 
-#define VOCAB_SIZE 600 // 최대 어휘 크기
+#define VOCAB_SIZE 500 // 최대 어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
-#define WINDOW_SIZE 1 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
+#define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define EPOCHS 12 // 에포크 수
+#define EPOCHS 50 // 에포크 수
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct {
@@ -33,6 +33,15 @@ typedef struct {
 	double vector[EMBEDDING_SIZE];
 } SentenceVector;
 
+// TreeNode 구조체
+typedef struct TreeNode {
+	double value;
+	struct TreeNode* left;
+	struct TreeNode* right;
+	int index;
+} TreeNode;
+
+TreeNode* createNode(double value, int index);
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double random_double();
 void softmax(double* input, double* output, int size);
@@ -57,7 +66,7 @@ int main() {
 		perror("Error opening dataset.txt"); // 파일 열기 에러메시지
 		return 1;
 	}
-	printf("Reading dataset.txt complete\n");
+	printf("Reading dataset.txt complete\r");
 	fseek(input_file, 0, SEEK_END); // 포인터를 파일 끝으로 --> 파일 크기
 	long file_size = ftell(input_file); // 파일 크기 저장
 	fseek(input_file, 0, SEEK_SET); // 포인터 원위치
@@ -138,6 +147,7 @@ double random_double() {
 	return (double)rand() / (double)RAND_MAX;
 }
 
+/*
 //input에 대해 소프트맥스 함수로 확률 분포를 계산해서 output 변수에 저장
 void softmax(double* input, double* output, int size) { //input = 입력벡터, output = 출력벡터, size = 벡터크기
 
@@ -161,6 +171,37 @@ void softmax(double* input, double* output, int size) { //input = 입력벡터, 
 		output[i] /= sum;
 	}
 }
+*/
+
+//이진 트리를 활용한 softmax 연산량 개선
+void softmax(double* input, double* output, int size) {
+	// overflow 방지를 위해 입력벡터의 최대값 도출
+	double max = input[0];
+	for (int i = 1; i < size; i++) {
+		if (input[i] > max) {
+			max = input[i];
+		}
+	}
+
+	// 입력벡터를 트리에 사용할 벡터로 변환
+	for (int i = 0; i < size; i++) {
+		input[i] = exp(input[i] - max);
+	}
+
+	// 이진 트리를 구성
+	TreeNode* root = buildTree(input, size);
+
+	// 트리를 탐색하며 softmax 확률을 계산
+	for (int i = 0; i < size; i++) {
+		output[i] = 0.0;
+	}
+	calculateProbabilities(root, 1.0, output);
+
+	// 트리 메모리 해제
+	freeTree(root);
+}
+
+
 
 // skip-gram 모델을 학습해서 vector.txt 파일에 저장
 void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 단어 쌍 배열, pair_count = 단어 쌍의 수, vocab_size =? 크기
@@ -620,19 +661,6 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 	fclose(file);
 }
 
-/*
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-
-// TreeNode 구조체
-typedef struct TreeNode {
-	double value;
-	struct TreeNode* left;
-	struct TreeNode* right;
-	int index;
-} TreeNode;
-
 // TreeNode 생성
 TreeNode* createNode(double value, int index) {
 	TreeNode* newNode = (TreeNode*)malloc(sizeof(TreeNode));
@@ -643,7 +671,7 @@ TreeNode* createNode(double value, int index) {
 	return newNode;
 }
 
-// 이진 트리를 구성
+// 이진 트리 구성
 TreeNode* buildTree(double* input, int size) {
 	// 우선순위 큐
 	TreeNode** heap = (TreeNode**)malloc(size * sizeof(TreeNode*));
@@ -668,7 +696,8 @@ TreeNode* buildTree(double* input, int size) {
 				if (heap[i]->value < heap[min1]->value) {
 					min2 = min1;
 					min1 = i;
-				} else {
+				}
+				else {
 					min2 = i;
 				}
 			}
@@ -712,47 +741,3 @@ void freeTree(TreeNode* node) {
 	free(node);
 }
 
-void softmax(double* input, double* output, int size) {
-	// overflow 방지를 위해 입력벡터의 최대값 도출
-	double max = input[0];
-	for (int i = 1; i < size; i++) {
-		if (input[i] > max) {
-			max = input[i];
-		}
-	}
-
-	// 입력벡터를 트리에 사용할 벡터로 변환
-	for (int i = 0; i < size; i++) {
-		input[i] = exp(input[i] - max);
-	}
-
-	// 이진 트리를 구성
-	TreeNode* root = buildTree(input, size);
-
-	// 트리를 탐색하며 softmax 확률을 계산
-	for (int i = 0; i < size; i++) {
-		output[i] = 0.0;
-	}
-	calculateProbabilities(root, 1.0, output);
-
-	// 트리 메모리 해제
-	freeTree(root);
-}
-
-int main() {
-	double input[] = { 1.0, 2.0, 3.0, 4.0 };
-	int size = sizeof(input) / sizeof(input[0]);
-	double output[size];
-
-	softmax(input, output, size);
-
-	for (int i = 0; i < size; i++) {
-		printf("%f ", output[i]);
-	}
-	printf("\n");
-
-	return 0;
-}
-
-
-*/
