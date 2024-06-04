@@ -8,11 +8,11 @@
 #include <Windows.h>
 #include <omp.h>
 
-#define VOCAB_SIZE 500 // 최대 어휘 크기
+#define VOCAB_SIZE 600 // 최대 어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define EPOCHS 50 // 에포크 수
+#define EPOCHS 100 // 에포크 수
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct {
@@ -33,7 +33,7 @@ typedef struct {
 	double vector[EMBEDDING_SIZE];
 } SentenceVector;
 
-// TreeNode 구조체
+// tree의 node 구조체
 typedef struct TreeNode {
 	double value;
 	struct TreeNode* left;
@@ -41,7 +41,6 @@ typedef struct TreeNode {
 	int index;
 } TreeNode;
 
-TreeNode* createNode(double value, int index);
 void initialize_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double random_double();
 void softmax(double* input, double* output, int size);
@@ -57,6 +56,10 @@ Word find_max_tfidf_word(Word* words, int word_count);
 void print_progress_bar(int epoch, int current, int total);
 void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
 void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
+TreeNode* createNode(double value, int index);
+TreeNode* buildTree(double* input, int size);
+void calculateProbabilities(TreeNode* node, double probability, double* output);
+void freeTree(TreeNode* node);
 
 int main() {
 	// 0. 입력값
@@ -66,7 +69,7 @@ int main() {
 		perror("Error opening dataset.txt"); // 파일 열기 에러메시지
 		return 1;
 	}
-	printf("Reading dataset.txt complete\r");
+	printf("Reading dataset.txt complete.\r\n");
 	fseek(input_file, 0, SEEK_END); // 포인터를 파일 끝으로 --> 파일 크기
 	long file_size = ftell(input_file); // 파일 크기 저장
 	fseek(input_file, 0, SEEK_SET); // 포인터 원위치
@@ -120,7 +123,7 @@ int main() {
 	compute_tfidf("tokenized.txt", words, &word_count); // TF-IDF 값을 계산해서
 	save_tfidf(words, word_count, "weight.txt"); // weight.txt에 저장
 	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
-	printf("Word with highest TF-IDF: %s (%.10f)\n", max_word.word, max_word.tfidf);
+	printf("Word with highest TF-IDF: %s (%.16f)\n", max_word.word, max_word.tfidf);
 
 	// 6. 문장 임베딩
 	printf("Computing sentence vectors\n");
@@ -148,8 +151,8 @@ double random_double() {
 }
 
 /*
-//input에 대해 소프트맥스 함수로 확률 분포를 계산해서 output 변수에 저장
-void softmax(double* input, double* output, int size) { //input = 입력벡터, output = 출력벡터, size = 벡터크기
+기존 softmax 계산 함수
+void softmax(double* input, double* output, int size) {
 
 	//overflow 방지를 위해 입력벡터의 최대값 도출
 	double max = input[0];
@@ -174,7 +177,7 @@ void softmax(double* input, double* output, int size) { //input = 입력벡터, 
 */
 
 //이진 트리를 활용한 softmax 연산량 개선
-void softmax(double* input, double* output, int size) {
+void softmax(double* input, double* output, int size) { //input = 입력벡터, output = 출력벡터, size = 벡터크기
 	// overflow 방지를 위해 입력벡터의 최대값 도출
 	double max = input[0];
 	for (int i = 1; i < size; i++) {
@@ -201,14 +204,12 @@ void softmax(double* input, double* output, int size) {
 	freeTree(root);
 }
 
-
-
 // skip-gram 모델을 학습해서 vector.txt 파일에 저장
 void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 단어 쌍 배열, pair_count = 단어 쌍의 수, vocab_size =? 크기
 	double input_vectors[VOCAB_SIZE][EMBEDDING_SIZE];
 	double output_vectors[VOCAB_SIZE][EMBEDDING_SIZE];
 	initialize_vectors(input_vectors); //입력 벡터 초기화
-	initialize_vectors(output_vectors); //출려 ㄱ벡터 초기화
+	initialize_vectors(output_vectors); //출려 벡터 초기화
 
 	for (int epoch = 0; epoch < EPOCHS; epoch++) { //에포크 수(하이퍼파라미터) 만큼 연산 반복
 		#pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적dynamic 작업 할당
@@ -557,7 +558,7 @@ void save_tfidf(Word* words, int word_count, const char* filename) { //상동
 	}
 
 	for (int i = 0; i < word_count; i++) {
-		fprintf(file, "%s %.10f\n", words[i].word, words[i].tfidf);
+		fprintf(file, "%s %.16f\n", words[i].word, words[i].tfidf);
 	}
 
 	fclose(file);
@@ -654,7 +655,7 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 	for (int i = 0; i < sentence_count; i++) {
 		fprintf(file, "%s", sentence_vectors[i].sentence);
 		for (int j = 0; j < EMBEDDING_SIZE; j++) {
-			fprintf(file, "%.10f ", sentence_vectors[i].vector[j]);
+			fprintf(file, "%.16f ", sentence_vectors[i].vector[j]);
 		}
 		fprintf(file, "\n");
 	}
@@ -664,15 +665,18 @@ void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count,
 // TreeNode 생성
 TreeNode* createNode(double value, int index) {
 	TreeNode* newNode = (TreeNode*)malloc(sizeof(TreeNode));
-	newNode->value = value;
-	newNode->left = NULL;
-	newNode->right = NULL;
-	newNode->index = index;
-	return newNode;
+	if (newNode != NULL) {
+		newNode->value = value;
+		newNode->left = NULL;
+		newNode->right = NULL;
+		newNode->index = index;
+		return newNode;
+	}
 }
 
 // 이진 트리 구성
 TreeNode* buildTree(double* input, int size) {
+
 	// 우선순위 큐
 	TreeNode** heap = (TreeNode**)malloc(size * sizeof(TreeNode*));
 	for (int i = 0; i < size; i++) {
@@ -683,7 +687,8 @@ TreeNode* buildTree(double* input, int size) {
 	int heapSize = size;
 
 	// 힙 빌드
-	while (heapSize > 1) {
+	while (heapSize > 1 && heap != NULL) {
+
 		// 최소값 두 개 찾기
 		int min1 = 0, min2 = 1;
 		if (heap[min2]->value < heap[min1]->value) {
@@ -696,8 +701,7 @@ TreeNode* buildTree(double* input, int size) {
 				if (heap[i]->value < heap[min1]->value) {
 					min2 = min1;
 					min1 = i;
-				}
-				else {
+				} else {
 					min2 = i;
 				}
 			}
@@ -733,7 +737,7 @@ void calculateProbabilities(TreeNode* node, double probability, double* output) 
 	}
 }
 
-// 트리 메모리 해제 함수
+// 트리 메모리 해제
 void freeTree(TreeNode* node) {
 	if (node == NULL) return;
 	freeTree(node->left);
