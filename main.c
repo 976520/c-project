@@ -11,8 +11,8 @@
 #define VOCAB_SIZE 600 // 최대 d어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
-#define LEARNING_RATE 1 // 학습률
-#define EPOCHS 50 // 에포크 수
+#define LEARNING_RATE 0.1 // 학습률
+#define EPOCHS 10 // 에포크 수
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct Pair {
@@ -49,20 +49,20 @@ Pair* generatePairs(const char* filename, int* pair_count);
 void splitSentences(const char* text, FILE* output_file);
 void tokenizeWords(const char* text, FILE* output_file);
 int tokenize();
-void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename);
-void compute_tfidf(const char* filename, Word* words, int* word_count);
-void save_tfidf(Word* words, int word_count, const char* filename);
-Word find_max_tfidf_word(Word* words, int word_count);
-void print_progress_bar(int epoch, int current, int total);
-void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
-void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
+void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename);
+void computeTfidf(const char* filename, Word* words, int* word_count);
+void saveTfidf(Word* words, int word_count, const char* filename);
+Word findMaxTfidfWord(Word* words, int word_count);
+void printProgressBar(int epoch, int current, int total);
+void computeSentenceVectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
+void saveSentenceVectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
 TreeNode* createNode(double value, int index);
 TreeNode* buildTree(double* input, int size);
 void calculateProbabilities(TreeNode* node, double probability, double* output);
 void freeTree(TreeNode* node);
 
 int main() {
-	// 0. 입력값
+	// 0. 입력
 	printf("Reading dataset.txt");
 	FILE* input_file = fopen("dataset.txt", "r"); // dataset.txt 파일을 읽기 모드로
 	if (input_file == NULL) {
@@ -111,27 +111,35 @@ int main() {
 		return 1;
 	}
 
-	// 4. word2vec 임베딩
-	printf("Training Skip-Gram model with %d pairs\n", pair_count);
+	// 4. word2vec 임베딩 (단어)
+	for (int i = 0; i < pair_count; i++) {
+		printf("\rTraining Skip-Gram model with %d pairs", i);
+	}
+
 	train(pairs, pair_count, VOCAB_SIZE); // Skip-Gram 모델 학습
 	free(pairs);
 
-	// 5. TF-IDF 중요도 분석기법
+	// 5. TF-IDF 중요도 분석기법 -> centeroid 추출
 	printf("Computing TF-IDF values\n");
 	Word words[VOCAB_SIZE];
 	int word_count = 0;
-	compute_tfidf("word_tokenized.txt", words, &word_count); // TF-IDF 값을 계산해서
-	save_tfidf(words, word_count, "weight.txt"); // weight.txt에 저장
-	Word max_word = find_max_tfidf_word(words, word_count); // TF-IDF 1등 찾기
+	computeTfidf("word_tokenized.txt", words, &word_count); // TF-IDF 값을 계산해서
+	saveTfidf(words, word_count, "weight.txt"); // weight.txt에 저장
+	Word max_word = findMaxTfidfWord(words, word_count); // TF-IDF 1등 찾기
 	printf("Word with highest TF-IDF: %s (%.16f)\n", max_word.word, max_word.tfidf);
 
 	// 6. 문장 임베딩
 	printf("Computing sentence vectors\n");
 	SentenceVector sentence_vectors[100];
 	int sentence_count = 0;
-	compute_sentence_vectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
+	computeSentenceVectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
-	save_sentence_vectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
+	saveSentenceVectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
+
+	// 7. centroid를 바탕으로 문장 cos 유사도 계산
+
+	// 8. 추출, 출력
+
 
 	return 0;
 }
@@ -153,7 +161,6 @@ double randomDouble() {
 /*
 기존 softmax 계산 함수
 void softmax(double* input, double* output, int size) {
-
 	//overflow 방지를 위해 입력벡터의 최대값 도출
 	double max = input[0];
 	for (int i = 1; i < size; i++) {
@@ -161,14 +168,12 @@ void softmax(double* input, double* output, int size) {
 			max = input[i];
 		}
 	}
-
 	// 지수함수 및 합계 계산 --> 중심적인 softmax 처리과정 (연산량 많음;;)
 	double sum = 0.0;
 	for (int i = 0; i < size; i++) {
 		output[i] = exp(input[i] - max);
 		sum += output[i];
 	}
-
 	// softmax 처리결가ㅗ를 0과 1 사이의 확률로 나타내지도록 정규화
 	for (int i = 0; i < size; i++) {
 		output[i] /= sum;
@@ -299,7 +304,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 �
 	initializeVectors(output_vectors); //출려 벡터 초기화
 
 	for (int epoch = 0; epoch < EPOCHS; epoch++) { //에포크 수(하이퍼파라미터) 만큼 연산 반복
-		#pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적dynamic 작업 할당
+#pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적dynamic 작업 할당
 		for (int i = 0; i < pair_count; i++) {
 			// 타겟 단어와 문맥 단어(window로 잡은 단어)의 내적 계산
 			int target = pairs[i].target;
@@ -316,20 +321,20 @@ void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 �
 			for (int k = 0; k < EMBEDDING_SIZE; k++) {
 				double error = (output_prob[context] - 1.0); //예측된 확률과 실제 값을 비교 --> 오차 계산
 				//그래디언트 역전파를 이용해 입출력 벡터 업데이트 (얘도 연산량 ㅈ됨;;)
-				#pragma omp atomic
-				//특정 메모리 위치에 대한 원자적 연산(뭔말인지모름) 수행 --> 여러 스레드의 동시 접근으로 인한 충돌 방지
+#pragma omp atomic
+//특정 메모리 위치에 대한 원자적 연산(뭔말인지모름) 수행 --> 여러 스레드의 동시 접근으로 인한 충돌 방지
 				input_vectors[target][k] -= LEARNING_RATE * error * output_vectors[context][k];
-				#pragma omp atomic
+#pragma omp atomic
 				output_vectors[context][k] -= LEARNING_RATE * error * input_vectors[target][k];
 			}
 
 			// 프로그레스바 출력
-			#pragma omp single //<-- 단일 스레드에서 처리
-			print_progress_bar(epoch + 1, i + 1, pair_count);
+#pragma omp single //<-- 단일 스레드에서 처리
+			printProgressBar(epoch + 1, i + 1, pair_count);
 		}
 		printf("Epoch %d: completed.\n", epoch + 1);
 	}
-	save_vectors(input_vectors, "word_vectors.txt"); //학습된 벡터 저장
+	saveVectors(input_vectors, "word_vectors.txt"); //학습된 벡터 저장
 }
 
 //텍스트 파일을 읽어서 단어 쌍 생성, 생성된 쌍을 배열로 반환
@@ -445,7 +450,8 @@ void splitSentences(const char* text, FILE* output_file) {
 				sentence_num++;
 			}
 			start = ptr;
-		} else {
+		}
+		else {
 			ptr++;
 		}
 	}
@@ -530,7 +536,7 @@ void tokenizeWords(const char* text, FILE* output_file) {
 
 
 //벡터를 파일에 저장
-void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename) { //vectors = 저장할 벡터 배열
+void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename) { //vectors = 저장할 벡터 배열
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
 		perror("Error opening word_vectors.txt");
@@ -549,7 +555,7 @@ void save_vectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filena
 }
 
 //단어의 tfidf 값을 연산
-void compute_tfidf(const char* filename, Word* words, int* word_count) { //filename = 텍스트파일이름, words = 단어 배열
+void computeTfidf(const char* filename, Word* words, int* word_count) { //filename = 텍스트파일이름, words = 단어 배열
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening word_tokenized.txt for TF-IDF computation");
@@ -638,7 +644,7 @@ void compute_tfidf(const char* filename, Word* words, int* word_count) { //filen
 }
 
 //계산된 tfidf 값을 파일로 저장
-void save_tfidf(Word* words, int word_count, const char* filename) { //상동
+void saveTfidf(Word* words, int word_count, const char* filename) { //상동
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
 		perror("Error opening weight.txt");
@@ -653,7 +659,7 @@ void save_tfidf(Word* words, int word_count, const char* filename) { //상동
 }
 
 //tfidf 값이 가장 높은 단어 탐색
-Word find_max_tfidf_word(Word* words, int word_count) {
+Word findMaxTfidfWord(Word* words, int word_count) {
 	Word max_word = words[0];
 	for (int i = 1; i < word_count; i++) {
 		if (words[i].tfidf > max_word.tfidf) {
@@ -664,7 +670,7 @@ Word find_max_tfidf_word(Word* words, int word_count) {
 }
 
 //프로그레스바 출력
-void print_progress_bar(int epoch, int current, int total) {
+void printProgressBar(int epoch, int current, int total) {
 	int bar_width = 50;
 	float progress = (float)current / total;
 	int pos = (int)(bar_width * progress);
@@ -673,7 +679,8 @@ void print_progress_bar(int epoch, int current, int total) {
 	for (int i = 0; i < bar_width; ++i) {
 		if (i <= pos) {
 			printf("▒");
-		} else {
+		}
+		else {
 			printf(" ");
 		}
 	}
@@ -687,19 +694,17 @@ void print_progress_bar(int epoch, int current, int total) {
 
 /*
 //각 문장의 벡터를 계산하여 sentence_vectors 배열에 저장
-void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
+void computeSentenceVectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening sentence_tokenized.txt");
 		return;
 	}
-
 	char line[1024];
 	*sentence_count = 0;
 	while (fgets(line, sizeof(line), file)) {
 		// 문장을 복사하여 버퍼 오버플로우 방지
 		strncpy(sentence_vectors[*sentence_count].sentence, line, sizeof(sentence_vectors[*sentence_count].sentence));
-
 		double vector_sum[EMBEDDING_SIZE] = { 0.0 }; // 벡터 합 초기화
 		int word_index;
 		char* token = strtok(line, " \n");
@@ -715,7 +720,6 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 			}
 			token = strtok(NULL, " \n");
 		}
-
 		// 문장에서 단어가 하나 이상일 때만 평균 계산
 		if (word_count_in_sentence > 0) {
 			for (int i = 0; i < EMBEDDING_SIZE; i++) {
@@ -729,10 +733,9 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 	}
 	fclose(file);
 }
-
 */
 
-void compute_sentence_vectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
+void computeSentenceVectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening sentence_tokenized.txt");
@@ -761,14 +764,12 @@ void compute_sentence_vectors(const char* filename, Word* words, int word_count,
 		}
 		sentence_vectors[sentence_idx++] = sv;
 	}
-
 	*sentence_count = sentence_idx;
 	fclose(file);
 }
 
-
 //문장 벡터를 파일에 저장
-void save_sentence_vectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename) {
+void saveSentenceVectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename) {
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
 		perror("Error opening sentence_vectors.txt");
