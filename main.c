@@ -8,11 +8,11 @@
 #include <Windows.h>
 #include <omp.h>
 
+#define EPOCHS 100 // 에포크 수
 #define VOCAB_SIZE 600 // 최대 d어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
-#define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
+#define WINDOW_SIZE 4 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define EPOCHS 100 // 에포크 수
 #define MAX_WORD_LENGTH 50
 #define MAX_WORDS 10000
 
@@ -45,6 +45,7 @@ typedef struct TreeNode {
 
 // 불용어 목록
 const char* stopwords[] = {
+			"0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
 			"i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "you're", "you've", "you'll", "you'd",
 			"your", "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "she's", "her", "hers",
 			"herself", "it", "it's", "its", "itself", "they", "them", "their", "theirs", "themselves", "what", "which",
@@ -60,62 +61,64 @@ const char* stopwords[] = {
 			"isn", "isn't", "ma", "mightn", "mightn't", "mustn", "mustn't", "needn", "needn't", "shan", "shan't",
 			"shouldn", "shouldn't", "wasn", "wasn't", "weren", "weren't", "won", "won't", "wouldn", "wouldn't"
 };
-const int stopwords_count = sizeof(stopwords) / sizeof(stopwords[0]);
+const int stopwordsCount = sizeof(stopwords) / sizeof(stopwords[0]);
 
 void initializeVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double randomDouble();
 void softmax(double* input, double* output, int size);
-void train(Pair* pairs, int pair_count, int vocab_size);
-Pair* generatePairs(const char* filename, int* pair_count);
-void splitSentences(const char* text, FILE* output_file);
-void tokenizeWords(const char* text, FILE* output_file);
+void train(Pair* pairs, int pairCount, int vocabSize);
+Pair* generatePairs(const char* filename, int* pairCount);
+void splitSentences(const char* text, FILE* outputFile);
+void tokenizeWords(const char* text, FILE* outputFile);
 int tokenize();
 void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename);
-void computeTfidf(const char* filename, Word* words, int* word_count);
-void saveTfidf(Word* words, int word_count, const char* filename);
-Word findMaxTfidfWord(Word* words, int word_count);
+void computeTfidf(const char* filename, Word* words, int* wordCount);
+void saveTfidf(Word* words, int wordCount, const char* filename);
+Word findMaxTfidfWord(Word* words, int wordCount);
 void printProgressBar(int epoch, int current, int total);
-void computeSentenceVectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count);
-void saveSentenceVectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename);
+void computeSentenceVectors(const char* filename, Word* words, int wordCount, SentenceVector* sentenceVectors, int* sentenceCount);
+void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, const char* filename);
 TreeNode* createNode(double value, int index);
 TreeNode* buildTree(double* input, int size);
 void calculateProbabilities(TreeNode* node, double probability, double* output);
 void freeTree(TreeNode* node);
-int is_stopword(const char* word);
+int isStopword(const char* word);
+
+//continue, else if, 전역변수 <-- 쓰면안됨
 
 int main() {
 	// 0. 입력
 	printf("Reading dataset.txt");
-	FILE* input_file = fopen("dataset.txt", "r"); // dataset.txt 파일을 읽기 모드로
-	if (input_file == NULL) {
+	FILE* inputFile = fopen("dataset.txt", "r"); // dataset.txt 파일을 읽기 모드로
+	if (inputFile == NULL) {
 		perror("Error opening dataset.txt"); // 파일 열기 에러메시지
 		return 1;
 	}
 	printf("\rReading dataset.txt completed.\r\n");
-	fseek(input_file, 0, SEEK_END); // 포인터를 파일 끝으로 --> 파일 크기
-	long file_size = ftell(input_file); // 파일 크기 저장
-	fseek(input_file, 0, SEEK_SET); // 포인터 원위치
+	fseek(inputFile, 0, SEEK_END); // 포인터를 파일 끝으로 --> 파일 크기
+	long fileSize = ftell(inputFile); // 파일 크기 저장
+	fseek(inputFile, 0, SEEK_SET); // 포인터 원위치
 	// 메모리 할당 (파일크기로)
-	char* text = (char*)malloc(file_size + 1);
+	char* text = (char*)malloc(fileSize + 1);
 	if (text == NULL) {
 		perror("Error allocating memory for dataset text"); //메모리할당 에러메시지
-		fclose(input_file);
+		fclose(inputFile);
 		return 1;
 	}
-	fread(text, 1, file_size, input_file); //text = dataset.txt 파일내용
-	text[file_size] = '\0'; // 문자열 끝에 널문자 추가
-	fclose(input_file);
+	fread(text, 1, fileSize, inputFile); //text = dataset.txt 파일내용
+	text[fileSize] = '\0'; // 문자열 끝에 널문자 추가
+	fclose(inputFile);
 
 	// 1. 문장 토큰화
 	printf("Splitting sentences into sentence_tokenized.txt\n");
-	FILE* output_file = fopen("sentence_tokenized.txt", "w"); // sentence_tokenized.txt 파일을 쓰기 모드로
-	if (output_file == NULL) {
+	FILE* outputFile = fopen("sentence_tokenized.txt", "w"); // sentence_tokenized.txt 파일을 쓰기 모드로
+	if (outputFile == NULL) {
 		perror("Error opening sentence_tokenized.txt"); // 파일 열기 에러메시지
 		free(text);
 		return 1;
 	}
-	splitSentences(text, output_file); // 문장분리함수호출
-	fclose(output_file); // 파일닫고
+	splitSentences(text, outputFile); // 문장분리함수호출
+	fclose(outputFile); // 파일닫고
 	free(text); // 메모리 할당 해제
 
 	// 2. 단어 토큰화
@@ -125,61 +128,97 @@ int main() {
 		return 1;
 	}
 
-	// 2-2. 정제
+	// 3. 정제
+
+	/*
 	printf("Removing stopword from word_tokenized.txt\n");
+	// 파일 읽기
+	FILE* word_file = fopen("word_tokenized.txt", "r");
+	if (word_file == NULL) {
+		perror("Error opening word_tokenized.txt");
+		return 1;
+	}
 
-	//+ 제시된 불용어 목록(stopwords)에 따라 word_tokenized.txt 에서 불용어를 제거하여 word_tokenized.txt에 저장하고 제거된 불용어와 그 개수를 printf로 출력
+	// wordss에 파일 내용 저장
+	char wordss[MAX_WORDS][MAX_WORD_LENGTH];
+	int words_count = 0;
+	while (fscanf(word_file, "%s", wordss[words_count]) != EOF) {
+		words_count++;
+	}
+	fclose(word_file);
 
-	// 3. 쌍연산
+	//파일 쓰기
+	FILE* output_word_file = fopen("word_tokenized.txt", "w");
+	if (output_word_file == NULL) {
+		perror("Error opening word_tokenized.txt for writing");
+		return 1;
+	}
+
+	//불용어 제거
+	int stopwords_removed = 0;
+	for (int i = 0; i < words_count; i++) {
+		if (!isStopword(wordss[i])) {
+			fprintf(output_word_file, "%s\n", wordss[i]);
+		}
+		else {
+			stopwords_removed++;
+		}
+	}
+	fclose(output_word_file);
+
+	printf("\rRemoved %d stopwords \r\n", stopwords_removed);
+	*/
+
+	// 4. 쌍연산
 	printf("Generating pairs from word_tokenized.txt\n");
-	int pair_count;
-	Pair* pairs = generatePairs("word_tokenized.txt", &pair_count); // word_tokenized.txt에서 쌍 생성
+	int pairCount;
+	Pair* pairs = generatePairs("word_tokenized.txt", &pairCount); // word_tokenized.txt에서 쌍 생성
 	if (pairs == NULL) {
 		return 1;
 	}
 
-	// 4. word2vec 임베딩 (단어)
-	for (int i = 0; i < pair_count; i++) {
+	// 5. word2vec 임베딩 (단어)
+	for (int i = 0; i < pairCount; i++) {
 		printf("\rTraining Skip-Gram model with %d pairs", i);
 	}
 
-	train(pairs, pair_count, VOCAB_SIZE); // Skip-Gram 모델 학습
+	train(pairs, pairCount, VOCAB_SIZE); // Skip-Gram 모델 학습
 	free(pairs);
 
-	// 5. TF-IDF 중요도 분석기법 -> centeroid 추출
+	// 6. TF-IDF 중요도 분석기법 -> centeroid 추출
 	printf("Computing TF-IDF values\n");
 	Word words[VOCAB_SIZE];
-	int word_count = 0;
-	computeTfidf("word_tokenized.txt", words, &word_count); // TF-IDF 값을 계산해서
-	saveTfidf(words, word_count, "weight.txt"); // weight.txt에 저장
-	Word max_word = findMaxTfidfWord(words, word_count); // TF-IDF 1등 찾기
-	printf("Word with highest TF-IDF: %s (%.16f)\n", max_word.word, max_word.tfidf);
+	int wordCount = 0;
+	computeTfidf("word_tokenized.txt", words, &wordCount); // TF-IDF 값을 계산해서
+	saveTfidf(words, wordCount, "weight.txt"); // weight.txt에 저장
+	Word maxWord = findMaxTfidfWord(words, wordCount); // TF-IDF 1등 찾기
+	printf("Word with highest TF-IDF: %s (%.16f)\n", maxWord.word, maxWord.tfidf);
 
-	// 6. 문장 임베딩
+	// 7. 문장 임베딩
 	printf("Computing sentence vectors\n");
-	SentenceVector sentence_vectors[100];
-	int sentence_count = 0;
-	computeSentenceVectors("sentence_tokenized.txt", words, word_count, sentence_vectors, &sentence_count);
+	SentenceVector sentenceVectors[100];
+	int sentenceCount = 0;
+	computeSentenceVectors("sentence_tokenized.txt", words, wordCount, sentenceVectors, &sentenceCount);
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
-	saveSentenceVectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
+	saveSentenceVectors(sentenceVectors, sentenceCount, "sentence_vectors.txt");
 
-	// 7. centeroid를 바탕으로 문장 cos 유사도 계산
-	printf("");
+	// 8. centeroid를 바탕으로 문장 cos 유사도 계산
 
-	// 8. 추출, 출력
+	// 9. 추출, 출력
 
 
 	return 0;
 }
 
-int is_stopword(const char* word) {
-	for (int i = 0; i < stopwords_count; i++) {
+int isStopword(const char* word) {
+	for (int i = 0; i < stopwordsCount; i++) {
 		if (strcmp(word, stopwords[i]) == 0) {
 			return 1;
 		}
 	}
 	return 0;
 }
+
 
 //(+-0.5/EMBEDDING_SIZE 사이의 값으로) 각 단어 벡터를 초기화
 void initializeVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]) { //vectors <- 초기화할 벡터 배열
@@ -269,7 +308,6 @@ TreeNode* buildTree(double* input, int size) {
 		}
 	}
 
-	// 힙 크기 변수
 	int heapSize = size;
 
 	// 힙 빌드
@@ -334,48 +372,48 @@ void freeTree(TreeNode* node) {
 }
 
 // skip-gram 모델을 학습해서 word_vectors.txt 파일에 저장
-void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 단어 쌍 배열, pair_count = 단어 쌍의 수, vocab_size =? 크기
-	double input_vectors[VOCAB_SIZE][EMBEDDING_SIZE];
-	double output_vectors[VOCAB_SIZE][EMBEDDING_SIZE];
-	initializeVectors(input_vectors); //입력 벡터 초기화
-	initializeVectors(output_vectors); //출려 벡터 초기화
+void train(Pair* pairs, int pairCount, int vocabSize) { //pairs = 학습할 단어 쌍 배열, pairCount = 단어 쌍의 수, vocabSize =? 크기
+	double inputVectors[VOCAB_SIZE][EMBEDDING_SIZE];
+	double outputVectors[VOCAB_SIZE][EMBEDDING_SIZE];
+	initializeVectors(inputVectors); //입력 벡터 초기화
+	initializeVectors(outputVectors); //출려 벡터 초기화
 
 	for (int epoch = 0; epoch < EPOCHS; epoch++) { //에포크 수(하이퍼파라미터) 만큼 연산 반복
 #pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적(dynamic) 작업 할당
-		for (int i = 0; i < pair_count; i++) {
+		for (int i = 0; i < pairCount; i++) {
 			// 타겟 단어와 문맥 단어(window로 잡은 단어)의 내적 계산
 			int target = pairs[i].target;
 			int context = pairs[i].context;
-			double dot_product[EMBEDDING_SIZE];
+			double dotProduct[EMBEDDING_SIZE];
 			for (int k = 0; k < EMBEDDING_SIZE; k++) {
-				dot_product[k] = input_vectors[target][k] * output_vectors[context][k];
+				dotProduct[k] = inputVectors[target][k] * outputVectors[context][k];
 			}
 
 			//내적 계산 결과를 softmax계산 함수에 넣어가꼬 확률 분포 도출
-			double output_prob[VOCAB_SIZE];
-			softmax(dot_product, output_prob, VOCAB_SIZE);
+			double outputProb[VOCAB_SIZE];
+			softmax(dotProduct, outputProb, VOCAB_SIZE);
 
 			for (int k = 0; k < EMBEDDING_SIZE; k++) {
-				double error = (output_prob[context] - 1.0); //예측된 확률과 실제 값을 비교 --> 오차 계산
+				double error = (outputProb[context] - 1.0); //예측된 확률과 실제 값을 비교 --> 오차 계산
 				//그래디언트 역전파를 이용해 입출력 벡터 업데이트 (얘도 연산량 ㅈ됨;;)
 #pragma omp atomic
 //특정 메모리 위치에 대한 원자적 연산(뭔말인지모름) 수행 --> 여러 스레드의 동시 접근으로 인한 충돌 방지
-				input_vectors[target][k] -= LEARNING_RATE * error * output_vectors[context][k];
+				inputVectors[target][k] -= LEARNING_RATE * error * outputVectors[context][k];
 #pragma omp atomic
-				output_vectors[context][k] -= LEARNING_RATE * error * input_vectors[target][k];
+				outputVectors[context][k] -= LEARNING_RATE * error * inputVectors[target][k];
 			}
 
 			// 프로그레스바 출력
 #pragma omp single //<-- 단일 스레드에서 처리
-			printProgressBar(epoch + 1, i + 1, pair_count);
+			printProgressBar(epoch + 1, i + 1, pairCount);
 		}
 		printf("Epoch %d: completed.\n", epoch + 1);
 	}
-	saveVectors(input_vectors, "word_vectors.txt"); //학습된 벡터 저장
+	saveVectors(inputVectors, "word_vectors.txt"); //학습된 벡터 저장
 }
 
 //텍스트 파일을 읽어서 단어 쌍 생성, 생성된 쌍을 배열로 반환
-Pair* generatePairs(const char* filename, int* pair_count) { //filename = 읽을 텍스트 파일명, pair_count = 생성된 쌍의 수
+Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 텍스트 파일명, pairCount = 생성된 쌍의 수
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening tokenized.txt");
@@ -384,10 +422,10 @@ Pair* generatePairs(const char* filename, int* pair_count) { //filename = 읽을
 
 	char line[256];
 	int* words = NULL;
-	int word_count = 0;
-	size_t words_alloc_size = 1024;
+	int wordCount = 0;
+	size_t wordsAllocSize = 1024;
 
-	words = (int*)malloc(sizeof(int) * words_alloc_size);
+	words = (int*)malloc(sizeof(int) * wordsAllocSize);
 	if (words == NULL) {
 		perror("Error allocating memory for words");
 		fclose(file);
@@ -404,8 +442,8 @@ Pair* generatePairs(const char* filename, int* pair_count) { //filename = 읽을
 			return NULL;
 		}
 
-		if (word_count >= words_alloc_size) {
-			words_alloc_size *= 2;
+		if (wordCount >= wordsAllocSize) {
+			wordsAllocSize *= 2;
 
 			if (words == NULL) {
 				perror("Error reallocating memory for words");
@@ -414,40 +452,40 @@ Pair* generatePairs(const char* filename, int* pair_count) { //filename = 읽을
 			}
 			else {
 
-				words = (int*)realloc(words, sizeof(int) * words_alloc_size);
+				words = (int*)realloc(words, sizeof(int) * wordsAllocSize);
 			}
 		}
-		words[word_count] = index;
-		word_count++;
+		words[wordCount] = index;
+		wordCount++;
 	}
 	fclose(file);
 
 	Pair* pairs = NULL;
-	size_t pairs_alloc_size = 1024;
-	*pair_count = 0;
+	size_t pairsAllocSize = 1024;
+	*pairCount = 0;
 
-	pairs = (Pair*)malloc(sizeof(Pair) * pairs_alloc_size);
+	pairs = (Pair*)malloc(sizeof(Pair) * pairsAllocSize);
 	if (pairs == NULL) {
 		perror("Error allocating memory for pairs");
 		free(words);
 		return NULL;
 	}
 
-	for (int i = 0; i < word_count; i++) {
+	for (int i = 0; i < wordCount; i++) {
 		for (int j = -WINDOW_SIZE; j <= WINDOW_SIZE; j++) {
-			if (j != 0 && (i + j) >= 0 && (i + j) < word_count) {
-				if (*pair_count >= pairs_alloc_size) {
-					pairs_alloc_size *= 2;
-					pairs = (Pair*)realloc(pairs, sizeof(Pair) * pairs_alloc_size);
+			if (j != 0 && (i + j) >= 0 && (i + j) < wordCount) {
+				if (*pairCount >= pairsAllocSize) {
+					pairsAllocSize *= 2;
+					pairs = (Pair*)realloc(pairs, sizeof(Pair) * pairsAllocSize);
 					if (pairs == NULL) {
 						perror("Error reallocating memory for pairs");
 						free(words);
 						return NULL;
 					}
 				}
-				pairs[*pair_count].target = words[i];
-				pairs[*pair_count].context = words[i + j];
-				(*pair_count)++;
+				pairs[*pairCount].target = words[i];
+				pairs[*pairCount].context = words[i + j];
+				(*pairCount)++;
 			}
 		}
 	}
@@ -456,18 +494,18 @@ Pair* generatePairs(const char* filename, int* pair_count) { //filename = 읽을
 }
 
 //문장 단위로 토큰화
-void splitSentences(const char* text, FILE* output_file) {
-	bool in_quotes = false;
+void splitSentences(const char* text, FILE* outputFile) {
+	bool inQuotes = false;
 	const char* start = text;
 	const char* ptr = text;
-	int sentence_num = 0;
+	int sentenceNum = 0;
 
 	while (*ptr) {
 		if (*ptr == '\"') {
-			in_quotes = !in_quotes;
+			inQuotes = !inQuotes;
 		}
 
-		if (!in_quotes && (*ptr == '.' || *ptr == '!' || *ptr == '?')) {
+		if (!inQuotes && (*ptr == '.' || *ptr == '!' || *ptr == '?')) {
 			while (*(ptr + 1) == ' ' || *(ptr + 1) == '\n' || *(ptr + 1) == '\r' || *(ptr + 1) == '\t') {
 				ptr++;
 			}
@@ -482,9 +520,9 @@ void splitSentences(const char* text, FILE* output_file) {
 				}
 				strncpy(sentence, start, len);
 				sentence[len] = '\0';
-				fprintf(output_file, "%d %s\n", sentence_num, sentence);
+				fprintf(outputFile, "%d %s\n", sentenceNum, sentence);
 				free(sentence);
-				sentence_num++;
+				sentenceNum++;
 			}
 			start = ptr;
 		}
@@ -504,7 +542,7 @@ void splitSentences(const char* text, FILE* output_file) {
 
 			strncpy(sentence, start, len);
 			sentence[len] = '\0';
-			fprintf(output_file, "%d %s\n", sentence_num, sentence);
+			fprintf(outputFile, "%d %s\n", sentenceNum, sentence);
 			free(sentence);
 		}
 	}
@@ -512,45 +550,45 @@ void splitSentences(const char* text, FILE* output_file) {
 
 //sentence_tokenized.txt 를 읽어서 각 문장을 단어로 분리하여 word_tokenized.txt에 저장
 int tokenize() {
-	FILE* input_file = fopen("sentence_tokenized.txt", "r");
-	if (input_file == NULL) {
+	FILE* inputFile = fopen("sentence_tokenized.txt", "r");
+	if (inputFile == NULL) {
 		perror("Error opening sentence_tokenized.txt");
 		return 1;
 	}
 
-	fseek(input_file, 0, SEEK_END);
-	long file_size = ftell(input_file);
-	fseek(input_file, 0, SEEK_SET);
+	fseek(inputFile, 0, SEEK_END);
+	long fileSize = ftell(inputFile);
+	fseek(inputFile, 0, SEEK_SET);
 
-	char* text = (char*)malloc(file_size + 1);
+	char* text = (char*)malloc(fileSize + 1);
 	if (text == NULL) {
 		perror("Error allocating memory for tokenization");
-		fclose(input_file);
+		fclose(inputFile);
 		return 1;
 	}
 
-	fread(text, 1, file_size, input_file);
-	text[file_size] = '\0';
+	fread(text, 1, fileSize, inputFile);
+	text[fileSize] = '\0';
 
-	fclose(input_file);
+	fclose(inputFile);
 
-	FILE* output_file = fopen("word_tokenized.txt", "w");
-	if (output_file == NULL) {
+	FILE* outputFile = fopen("word_tokenized.txt", "w");
+	if (outputFile == NULL) {
 		perror("Error opening word_tokenized.txt");
 		free(text);
 		return 1;
 	}
 
-	tokenizeWords(text, output_file);
+	tokenizeWords(text, outputFile);
 
 	free(text);
-	fclose(output_file);
+	fclose(outputFile);
 
 	return 0;
 }
 
 //실질적힌 단어 토큰화 처리 수행
-void tokenizeWords(const char* text, FILE* output_file) {
+void tokenizeWords(const char* text, FILE* outputFile) {
 	const char* delimiters = " \t\r\n.,!?\"'";
 	char* copy = strdup(text);
 	if (copy == NULL) {
@@ -559,12 +597,12 @@ void tokenizeWords(const char* text, FILE* output_file) {
 	}
 
 	char* token = strtok(copy, delimiters);
-	int word_count = 0;
+	int wordCount = 0;
 	printf("");
 	while (token != NULL) {
-		fprintf(output_file, "%d %s\n", word_count, token);
-		printf("\rtokenizeWords: %d", word_count);
-		word_count++;
+		fprintf(outputFile, "%d %s\n", wordCount, token);
+		printf("\rtokenizeWords: %d", wordCount);
+		wordCount++;
 		token = strtok(NULL, delimiters);
 	}
 	printf("\n");
@@ -592,68 +630,68 @@ void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filenam
 }
 
 //단어의 tfidf 값을 연산
-void computeTfidf(const char* filename, Word* words, int* word_count) { //filename = 텍스트파일이름, words = 단어 배열
+void computeTfidf(const char* filename, Word* words, int* wordCount) { //filename = 텍스트파일이름, words = 단어 배열
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening word_tokenized.txt for TF-IDF computation");
 		return;
 	}
 
-	int doc_count = 0;
+	int docCount = 0;
 	char line[256];
 	char** docs = NULL;
 
 	// 문서를 읽어서 메모리에 저장
 	while (fgets(line, sizeof(line), file)) {
-		docs = realloc(docs, sizeof(char*) * (doc_count + 1));
+		docs = realloc(docs, sizeof(char*) * (docCount + 1));
 		if (docs == NULL) {
 			perror("Error reallocating memory for documents");
 			fclose(file);
 			return;
 		}
-		docs[doc_count] = strdup(line);
-		if (docs[doc_count] == NULL) {
+		docs[docCount] = strdup(line);
+		if (docs[docCount] == NULL) {
 			perror("Error duplicating line for document storage");
 			fclose(file);
 			return;
 		}
-		doc_count++;
+		docCount++;
 	}
 	fclose(file);
 
-	int* term_freqs = calloc(VOCAB_SIZE, sizeof(int));
-	int* doc_freqs = calloc(VOCAB_SIZE, sizeof(int));
-	if (term_freqs == NULL || doc_freqs == NULL) {
+	int* termFreqs = calloc(VOCAB_SIZE, sizeof(int));
+	int* docFreqs = calloc(VOCAB_SIZE, sizeof(int));
+	if (termFreqs == NULL || docFreqs == NULL) {
 		perror("Error allocating memory for term/document frequencies");
-		free(term_freqs);
-		free(doc_freqs);
-		for (int i = 0; i < doc_count; i++) {
+		free(termFreqs);
+		free(docFreqs);
+		for (int i = 0; i < docCount; i++) {
 			free(docs[i]);
 		}
 		free(docs);
 		return;
 	}
-	int total_terms = 0;
+	int totalTerms = 0;
 
 	// Calculate term frequencies
-	for (int i = 0; i < doc_count; i++) {
+	for (int i = 0; i < docCount; i++) {
 		char* token = strtok(docs[i], " \t\r\n");
 		while (token) {
 			int index = atoi(token);
-			term_freqs[index]++;
-			total_terms++;
+			termFreqs[index]++;
+			totalTerms++;
 			token = strtok(NULL, " \t\r\n");
 		}
 	}
 
 	// Calculate document frequencies
 	for (int i = 0; i < VOCAB_SIZE; i++) {
-		for (int j = 0; j < doc_count; j++) {
+		for (int j = 0; j < docCount; j++) {
 			char* token = strtok(docs[j], " \t\r\n");
 			while (token) {
 				int index = atoi(token);
 				if (index == i) {
-					doc_freqs[i]++;
+					docFreqs[i]++;
 					break;
 				}
 				token = strtok(NULL, " \t\r\n");
@@ -663,32 +701,32 @@ void computeTfidf(const char* filename, Word* words, int* word_count) { //filena
 
 	// Calculate TF-IDF values
 	for (int i = 0; i < VOCAB_SIZE; i++) {
-		if (term_freqs[i] > 0) {
-			double tf = (double)term_freqs[i] / total_terms;
-			double idf = log((double)doc_count / (doc_freqs[i] + 1));
-			words[*word_count].tfidf = tf * idf;
-			snprintf(words[*word_count].word, 256, "%d", i);
-			(*word_count)++;
+		if (termFreqs[i] > 0) {
+			double tf = (double)termFreqs[i] / totalTerms;
+			double idf = log((double)docCount / (docFreqs[i] + 1));
+			words[*wordCount].tfidf = tf * idf;
+			snprintf(words[*wordCount].word, 256, "%d", i);
+			(*wordCount)++;
 		}
 	}
-	free(term_freqs);
-	free(doc_freqs);
+	free(termFreqs);
+	free(docFreqs);
 
-	for (int i = 0; i < doc_count; i++) {
+	for (int i = 0; i < docCount; i++) {
 		free(docs[i]);
 	}
 	free(docs);
 }
 
 //계산된 tfidf 값을 파일로 저장
-void saveTfidf(Word* words, int word_count, const char* filename) { //상동
+void saveTfidf(Word* words, int wordCount, const char* filename) { //상동
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
 		perror("Error opening weight.txt");
 		return;
 	}
 
-	for (int i = 0; i < word_count; i++) {
+	for (int i = 0; i < wordCount; i++) {
 		fprintf(file, "%s %.16f\n", words[i].word, words[i].tfidf);
 	}
 
@@ -696,24 +734,24 @@ void saveTfidf(Word* words, int word_count, const char* filename) { //상동
 }
 
 //tfidf 값이 가장 높은 단어 탐색
-Word findMaxTfidfWord(Word* words, int word_count) {
-	Word max_word = words[0];
-	for (int i = 1; i < word_count; i++) {
-		if (words[i].tfidf > max_word.tfidf) {
-			max_word = words[i];
+Word findMaxTfidfWord(Word* words, int wordCount) {
+	Word maxWord = words[0];
+	for (int i = 1; i < wordCount; i++) {
+		if (words[i].tfidf > maxWord.tfidf) {
+			maxWord = words[i];
 		}
 	}
-	return max_word;
+	return maxWord;
 }
 
 //프로그레스바 출력
 void printProgressBar(int epoch, int current, int total) {
-	int bar_width = 50;
+	int barWidth = 50;
 	float progress = (float)current / total;
-	int pos = (int)(bar_width * progress);
+	int pos = (int)(barWidth * progress);
 
 	printf("Epoch %d: |", epoch);
-	for (int i = 0; i < bar_width; ++i) {
+	for (int i = 0; i < barWidth; ++i) {
 		if (i <= pos) {
 			printf("▒");
 		}
@@ -730,18 +768,17 @@ void printProgressBar(int epoch, int current, int total) {
 }
 
 /*
-//각 문장의 벡터를 계산하여 sentence_vectors 배열에 저장
-void computeSentenceVectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
+void computeSentenceVectors(const char* filename, Word* words, int wordCount, SentenceVector* sentenceVectors, int* sentenceCount) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening sentence_tokenized.txt");
 		return;
 	}
 	char line[1024];
-	*sentence_count = 0;
+	*sentenceCount = 0;
 	while (fgets(line, sizeof(line), file)) {
 		// 문장을 복사하여 버퍼 오버플로우 방지
-		strncpy(sentence_vectors[*sentence_count].sentence, line, sizeof(sentence_vectors[*sentence_count].sentence));
+		strncpy(sentenceVectors[*sentenceCount].sentence, line, sizeof(sentenceVectors[*sentenceCount].sentence));
 		double vector_sum[EMBEDDING_SIZE] = { 0.0 }; // 벡터 합 초기화
 		int word_index;
 		char* token = strtok(line, " \n");
@@ -760,19 +797,20 @@ void computeSentenceVectors(const char* filename, Word* words, int word_count, S
 		// 문장에서 단어가 하나 이상일 때만 평균 계산
 		if (word_count_in_sentence > 0) {
 			for (int i = 0; i < EMBEDDING_SIZE; i++) {
-				sentence_vectors[*sentence_count].vector[i] = vector_sum[i] / word_count_in_sentence; // 벡터의 평균 계산
+				sentenceVectors[*sentenceCount].vector[i] = vector_sum[i] / word_count_in_sentence; // 벡터의 평균 계산
 			}
 		} else {
 			// 문장이 비어있거나 유효한 단어 인덱스가 없는 경우 0 벡터로 유지
-			memset(sentence_vectors[*sentence_count].vector, 0, sizeof(sentence_vectors[*sentence_count].vector));
+			memset(sentenceVectors[*sentenceCount].vector, 0, sizeof(sentenceVectors[*sentenceCount].vector));
 		}
-		(*sentence_count)++;
+		(*sentenceCount)++;
 	}
 	fclose(file);
 }
 */
 
-void computeSentenceVectors(const char* filename, Word* words, int word_count, SentenceVector* sentence_vectors, int* sentence_count) {
+//각 문장의 벡터를 계산하여 sentenceVectors 배열에 저장
+void computeSentenceVectors(const char* filename, Word* words, int wordCount, SentenceVector* sentenceVectors, int* sentenceCount) {
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening sentence_tokenized.txt");
@@ -780,7 +818,7 @@ void computeSentenceVectors(const char* filename, Word* words, int word_count, S
 	}
 
 	char line[1024];
-	int sentence_idx = 0;
+	int sentenceIdx = 0;
 
 	while (fgets(line, sizeof(line), file)) {
 		SentenceVector sv;
@@ -789,7 +827,7 @@ void computeSentenceVectors(const char* filename, Word* words, int word_count, S
 
 		char* token = strtok(line, " \t\r\n");
 		while (token != NULL) {
-			for (int i = 0; i < word_count; i++) {
+			for (int i = 0; i < wordCount; i++) {
 				if (strcmp(token, words[i].word) == 0) {
 					for (int j = 0; j < EMBEDDING_SIZE; j++) {
 						sv.vector[j] += words[i].vector[j];
@@ -799,28 +837,27 @@ void computeSentenceVectors(const char* filename, Word* words, int word_count, S
 			}
 			token = strtok(NULL, " \t\r\n");
 		}
-		sentence_vectors[sentence_idx++] = sv;
+		sentenceVectors[sentenceIdx++] = sv;
 	}
-	*sentence_count = sentence_idx;
+	*sentenceCount = sentenceIdx;
 	fclose(file);
 }
 
 //문장 벡터를 파일에 저장
-void saveSentenceVectors(SentenceVector* sentence_vectors, int sentence_count, const char* filename) {
+void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, const char* filename) {
 	FILE* file = fopen(filename, "w");
 	if (file == NULL) {
 		perror("Error opening sentence_vectors.txt");
 		return;
 	}
 
-	for (int i = 0; i < sentence_count; i++) {
-		fprintf(file, "%s", sentence_vectors[i].sentence);
+	for (int i = 0; i < sentenceCount; i++) {
+		fprintf(file, "%s", sentenceVectors[i].sentence);
 		for (int j = 0; j < EMBEDDING_SIZE; j++) {
-			fprintf(file, "%.20f ", sentence_vectors[i].vector[j]);
+			fprintf(file, "%.20f ", sentenceVectors[i].vector[j]);
 		}
 		fprintf(file, "\n");
 	}
-
 	fclose(file);
 }
 
