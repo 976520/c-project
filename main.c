@@ -12,7 +12,9 @@
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define EPOCHS 10 // 에포크 수
+#define EPOCHS 100 // 에포크 수
+#define MAX_WORD_LENGTH 50
+#define MAX_WORDS 10000
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct Pair {
@@ -41,6 +43,25 @@ typedef struct TreeNode {
 	int index;
 } TreeNode;
 
+// 불용어 목록
+const char* stopwords[] = {
+			"i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "you're", "you've", "you'll", "you'd",
+			"your", "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "she's", "her", "hers",
+			"herself", "it", "it's", "its", "itself", "they", "them", "their", "theirs", "themselves", "what", "which",
+			"who", "whom", "this", "that", "that'll", "these", "those", "am", "is", "are", "was", "were", "be", "been",
+			"being", "have", "has", "had", "having", "do", "does", "did", "doing", "a", "an", "the", "and", "but", "if",
+			"or", "because", "as", "until", "while", "of", "at", "by", "for", "with", "about", "against", "between",
+			"into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "in", "out",
+			"on", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why",
+			"how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+			"only", "own", "same", "so", "than", "too", "very", "s", "t", "can", "will", "just", "don", "don't",
+			"should", "should've", "now", "d", "ll", "m", "o", "re", "ve", "y", "ain", "aren", "aren't", "couldn",
+			"couldn't", "didn", "didn't", "doesn", "doesn't", "hadn", "hadn't", "hasn", "hasn't", "haven", "haven't",
+			"isn", "isn't", "ma", "mightn", "mightn't", "mustn", "mustn't", "needn", "needn't", "shan", "shan't",
+			"shouldn", "shouldn't", "wasn", "wasn't", "weren", "weren't", "won", "won't", "wouldn", "wouldn't"
+};
+const int stopwords_count = sizeof(stopwords) / sizeof(stopwords[0]);
+
 void initializeVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
 double randomDouble();
 void softmax(double* input, double* output, int size);
@@ -60,6 +81,7 @@ TreeNode* createNode(double value, int index);
 TreeNode* buildTree(double* input, int size);
 void calculateProbabilities(TreeNode* node, double probability, double* output);
 void freeTree(TreeNode* node);
+int is_stopword(const char* word);
 
 int main() {
 	// 0. 입력
@@ -103,6 +125,11 @@ int main() {
 		return 1;
 	}
 
+	// 2-2. 정제
+	printf("Removing stopword from word_tokenized.txt\n");
+
+	//+ 제시된 불용어 목록(stopwords)에 따라 word_tokenized.txt 에서 불용어를 제거하여 word_tokenized.txt에 저장하고 제거된 불용어와 그 개수를 printf로 출력
+
 	// 3. 쌍연산
 	printf("Generating pairs from word_tokenized.txt\n");
 	int pair_count;
@@ -136,11 +163,21 @@ int main() {
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
 	saveSentenceVectors(sentence_vectors, sentence_count, "sentence_vectors.txt");
 
-	// 7. centroid를 바탕으로 문장 cos 유사도 계산
+	// 7. centeroid를 바탕으로 문장 cos 유사도 계산
+	printf("");
 
 	// 8. 추출, 출력
 
 
+	return 0;
+}
+
+int is_stopword(const char* word) {
+	for (int i = 0; i < stopwords_count; i++) {
+		if (strcmp(word, stopwords[i]) == 0) {
+			return 1;
+		}
+	}
 	return 0;
 }
 
@@ -304,7 +341,7 @@ void train(Pair* pairs, int pair_count, int vocab_size) { //pairs = 학습할 �
 	initializeVectors(output_vectors); //출려 벡터 초기화
 
 	for (int epoch = 0; epoch < EPOCHS; epoch++) { //에포크 수(하이퍼파라미터) 만큼 연산 반복
-#pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적dynamic 작업 할당
+#pragma omp parallel for schedule(dynamic) //병렬 루프 지정 + 동적(dynamic) 작업 할당
 		for (int i = 0; i < pair_count; i++) {
 			// 타겟 단어와 문맥 단어(window로 잡은 단어)의 내적 계산
 			int target = pairs[i].target;
@@ -786,3 +823,4 @@ void saveSentenceVectors(SentenceVector* sentence_vectors, int sentence_count, c
 
 	fclose(file);
 }
+
