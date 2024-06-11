@@ -8,7 +8,7 @@
 #include <Windows.h>
 #include <omp.h>
 
-#define EPOCHS 100 // 에포크 수
+#define EPOCHS 200 // 에포크 수
 #define VOCAB_SIZE 600 // 최대 d어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 4 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
@@ -17,26 +17,26 @@
 #define MAX_WORDS 10000
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
-typedef struct Pair {
+typedef struct {
 	int target;
 	int context;
 } Pair;
 
 // 단어와 그 단어의 TF-IDF 값을 나타내는 구조체
-typedef struct Word {
+typedef struct {
 	char word[256];
 	double tfidf;
 	double vector[EMBEDDING_SIZE];
 } Word;
 
 // 문장과 문장의 벡터 표현을 나타내는 구조체
-typedef struct SentencVector {
+typedef struct {
 	char sentence[1024];
 	double vector[EMBEDDING_SIZE];
 } SentenceVector;
 
 // tree의 node 구조체
-typedef struct TreeNode {
+typedef struct {
 	double value;
 	struct TreeNode* left;
 	struct TreeNode* right;
@@ -130,9 +130,8 @@ int main() {
 
 	// 3. 정제
 
-	/*
 	printf("Removing stopword from word_tokenized.txt\n");
-	// 파일 읽기
+	// 파일 읽읽
 	FILE* word_file = fopen("word_tokenized.txt", "r");
 	if (word_file == NULL) {
 		perror("Error opening word_tokenized.txt");
@@ -147,7 +146,7 @@ int main() {
 	}
 	fclose(word_file);
 
-	//파일 쓰기
+	//파일 쓰쓰
 	FILE* output_word_file = fopen("word_tokenized.txt", "w");
 	if (output_word_file == NULL) {
 		perror("Error opening word_tokenized.txt for writing");
@@ -167,7 +166,6 @@ int main() {
 	fclose(output_word_file);
 
 	printf("\rRemoved %d stopwords \r\n", stopwords_removed);
-	*/
 
 	// 4. 쌍연산
 	printf("Generating pairs from word_tokenized.txt\n");
@@ -293,25 +291,33 @@ TreeNode* createNode(double value, int index) {
 		newNode->left = NULL;
 		newNode->right = NULL;
 		newNode->index = index;
-		return newNode;
 	}
+	return newNode;
 }
+
 
 // 이진 트리 구성
 TreeNode* buildTree(double* input, int size) {
 	// 우선순위 큐
 	TreeNode** heap = (TreeNode**)malloc(size * sizeof(TreeNode*));
-
-	for (int i = 0; i < size; i++) {
-		if (heap != NULL) {
-			heap[i] = createNode(input[i], i);
-		}
+	if (heap == NULL) {
+		return NULL;
 	}
 
+	for (int i = 0; i < size; i++) {
+		heap[i] = createNode(input[i], i);
+		if (heap[i] == NULL) {
+			for (int j = 0; j < i; j++) {
+				free(heap[j]);
+			}
+			free(heap);
+			return NULL;
+		}
+	}
 	int heapSize = size;
 
 	// 힙 빌드
-	while (heapSize > 1 && heap != NULL) {
+	while (heapSize > 1) {
 
 		// 최소값 두 개 찾기
 		int min1 = 0, min2 = 1;
@@ -334,6 +340,13 @@ TreeNode* buildTree(double* input, int size) {
 
 		// 새로운 부모 노드 생성
 		TreeNode* parent = createNode(heap[min1]->value + heap[min2]->value, -1);
+		if (parent == NULL) {
+			for (int i = 0; i < heapSize; i++) {
+				freeTree(heap[i]);
+			}
+			free(heap);
+			return NULL;
+		}
 		parent->left = heap[min1];
 		parent->right = heap[min2];
 
@@ -342,11 +355,9 @@ TreeNode* buildTree(double* input, int size) {
 		heap[min2] = heap[heapSize - 1];
 		heapSize--;
 	}
-	if (heap != NULL) {
-		TreeNode* root = heap[0];
-		free(heap);
-		return root;
-	}
+	TreeNode* root = heap[0];
+	free(heap);
+	return root;
 }
 
 // 트리를 탐색하며 softmax 확률을 계산
@@ -609,7 +620,6 @@ void tokenizeWords(const char* text, FILE* outputFile) {
 	free(copy);
 }
 
-
 //벡터를 파일에 저장
 void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename) { //vectors = 저장할 벡터 배열
 	FILE* file = fopen(filename, "w");
@@ -861,3 +871,35 @@ void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, con
 	fclose(file);
 }
 
+/*
+
+main.c: In function 'buildTree':
+
+main.c:350:16: warning: assignment from incompatible pointer type [-Wincompatible-pointer-types]
+   parent->left = heap[min1];
+				^
+main.c:351:17: warning: assignment from incompatible pointer type [-Wincompatible-pointer-types]
+   parent->right = heap[min2];
+				 ^
+
+main.c: In function 'calculateProbabilities':
+
+main.c:370:26: warning: passing argument 1 of 'calculateProbabilities' from incompatible pointer type [-Wincompatible-pointer-types]
+   calculateProbabilities(node->left, probability * 0.5, output);
+						  ^~~~
+main.c:373:26: warning: passing argument 1 of 'calculateProbabilities' from incompatible pointer type [-Wincompatible-pointer-types]
+   calculateProbabilities(node->right, probability * 0.5, output);
+						  ^~~~
+
+main.c: In function 'freeTree':
+
+main.c:380:11: warning: passing argument 1 of 'freeTree' from incompatible pointer type [-Wincompatible-pointer-types]
+  freeTree(node->left);
+		   ^~~~
+
+main.c:381:11: warning: passing argument 1 of 'freeTree' from incompatible pointer type [-Wincompatible-pointer-types]
+  freeTree(node->right);
+		   ^~~~
+
+
+*/
