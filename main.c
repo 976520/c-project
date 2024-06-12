@@ -13,8 +13,9 @@
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
 #define WINDOW_SIZE 8 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
 #define LEARNING_RATE 0.1 // 학습률
-#define MAX_WORD_LENGTH 50
+#define MAX_WORD_LENGTH 100
 #define MAX_WORDS 10000
+#define MAX_VECTOR_DIMENSION 300
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct Pair {
@@ -34,6 +35,12 @@ typedef struct SentencVector {
 	char sentence[1024];
 	double vector[EMBEDDING_SIZE];
 } SentenceVector;
+
+// 단어 벡터 구조체
+typedef struct {
+	char word[MAX_WORD_LENGTH];
+	float vector[MAX_VECTOR_DIMENSION];
+} WordVector;
 
 // tree의 node 구조체
 typedef struct TreeNode {
@@ -70,7 +77,6 @@ int isStopword(const char* word); //3
 Pair* generatePairs(const char* filename, int* pairCount); //4
 
 void train(Pair* pairs, int pairCount, int vocabSize); //5
-void printProgressBar(int epoch, int current, int total);
 void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename);
 void softmax(double* input, double* output, int size);
 void initializeVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE]);
@@ -79,12 +85,17 @@ TreeNode* createNode(double value, int index);
 TreeNode* buildTree(double* input, int size);
 void calculateProbabilities(TreeNode* node, double probability, double* output);
 void freeTree(TreeNode* node);
+void printProgressBar(int epoch, int current, int total);
 
 void computeTfidf(const char* filename, Word* words, int* wordCount); //6
 void saveTfidf(Word* words, int wordCount, const char* filename);
 Word findMaxTfidfWord(Word* words, int wordCount);
 void computeSentenceVectors(const char* filename, Word* words, int wordCount, SentenceVector* sentenceVectors, int* sentenceCount); //7
 void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, const char* filename);
+
+float euclidean_distance(float* v1, float* v2, int dimension);
+void find_nearest_neighbor(char* word, WordVector* word_vectors, int num_words, int dimension);
+
 
 //continue, else if, 전역변수 <-- 쓰면안됨
 
@@ -131,44 +142,35 @@ int main() {
 	}
 
 	// 3. 정제 <- ㅗㅗ
-
+	/*
 	printf("Removing stopword from word_tokenized.txt\n");
-	// 파일 읽기
-	FILE* word_file = fopen("word_tokenized.txt", "r");
+	FILE* word_file = fopen("word_tokenized.txt", "r"); // 파일 읽읽
 	if (word_file == NULL) {
 		perror("Error opening word_tokenized.txt");
 		return 1;
 	}
-
-	// wordss에 파일 내용 저장
-	char wordss[MAX_WORDS][MAX_WORD_LENGTH];
+	char wordss[MAX_WORDS][MAX_WORD_LENGTH]; // wordss에 파일 내용 저장
 	int words_count = 0;
 	while (fscanf(word_file, "%s", wordss[words_count]) != EOF) {
 		words_count++;
 	}
 	fclose(word_file);
-
-	//파일 쓰기
-	FILE* output_word_file = fopen("word_tokenized.txt", "w");
+	FILE* output_word_file = fopen("word_tokenized.txt", "w"); //파일 쓰쓰
 	if (output_word_file == NULL) {
 		perror("Error opening word_tokenized.txt for writing");
 		return 1;
 	}
-
-	//불용어 제거
 	int stopwords_removed = 0;
-	for (int i = 0; i < words_count; i++) {
+	for (int i = 0; i < words_count; i++) { //불용어 제거
 		if (!isStopword(wordss[i])) {
 			fprintf(output_word_file, "%s\n", wordss[i]);
-		}
-		else {
+		} else {
 			stopwords_removed++;
 		}
 	}
 	fclose(output_word_file);
-
 	printf("\rRemoved %d stopwords \r\n", stopwords_removed);
-
+	*/
 
 	// 4. 쌍연산
 	printf("Generating pairs from word_tokenized.txt\n");
@@ -178,7 +180,7 @@ int main() {
 		return 1;
 	}
 
-	// 5. word2vec 임베딩 <--- 핵심기술
+	// 5. word2vec 임베딩 -> 내적공간 벡터로 표현
 	for (int i = 0; i < pairCount; i++) {
 		printf("\rTraining Skip-Gram model with %d pairs", i);
 	}
@@ -202,9 +204,9 @@ int main() {
 	printf("Saving sentence vectors to sentence_vectors.txt\n");
 	saveSentenceVectors(sentenceVectors, sentenceCount, "sentence_vectors.txt");
 
-	// 8. centeroid를 바탕으로 문장 cos 유사도 계산
+	// 8. 유클라디안 스칼라곱을 이용해 벡터의 코사인값 유도
 
-	// 9. 추출, 출력
+	// 9. centeroid를 바탕으로 문장 cos 유사도 계산 -> centeroid와 유사한 벡터 산출
 
 
 	return 0;
@@ -458,29 +460,6 @@ void train(Pair* pairs, int pairCount, int vocabSize) { //pairs = 학습할 단�
 	saveVectors(inputVectors, "word_vectors.txt"); //학습된 벡터 저장
 }
 
-//프로그레스바 출력
-void printProgressBar(int epoch, int current, int total) {
-	int barWidth = 50;
-	float progress = (float)current / total;
-	int pos = (int)(barWidth * progress);
-
-	printf("Epoch %d: |", epoch);
-	for (int i = 0; i < barWidth; ++i) {
-		if (i <= pos) {
-			printf("▒");
-		}
-		else {
-			printf(" ");
-		}
-	}
-	printf("| %d% %(%d/%d)\r", (int)(progress * 100), current, total);
-	fflush(stdout);
-
-	if (current == total) {
-		printf("Epoch %d: completed.                                                          \r", epoch);
-	}
-}
-
 //벡터를 파일에 저장
 void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename) { //vectors = 저장할 벡터 배열
 	FILE* file = fopen(filename, "w");
@@ -496,7 +475,6 @@ void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filenam
 		}
 		fprintf(file, "\n");
 	}
-
 	fclose(file);
 }
 
@@ -648,6 +626,29 @@ void freeTree(TreeNode* node) {
 	freeTree(node->left);
 	freeTree(node->right);
 	free(node);
+}
+
+//프로그레스바 출력
+void printProgressBar(int epoch, int current, int total) {
+	int barWidth = 50;
+	float progress = (float)current / total;
+	int pos = (int)(barWidth * progress);
+
+	printf("Epoch %d: |", epoch);
+	for (int i = 0; i < barWidth; ++i) {
+		if (i <= pos) {
+			printf("▒");
+		}
+		else {
+			printf(" ");
+		}
+	}
+	printf("| %d% %(%d/%d)\r", (int)(progress * 100), current, total);
+	fflush(stdout);
+
+	if (current == total) {
+		printf("Epoch %d: completed.                                                          \r", epoch);
+	}
 }
 
 //단어의 tfidf 값을 연산
@@ -858,3 +859,44 @@ void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, con
 	fclose(file);
 }
 
+//코사인 유사도 계산
+/*
+void cosine_similarity(float* v1, float* v2, int dimension) {
+	float dot_product = 0.0;
+	float norm1 = 0.0;
+	float norm2 = 0.0;
+
+	for (int i = 0; i < dimension; i++) {
+		dot_product += v1[i] * v2[i];
+		norm1 += v1[i] * v1[i];
+		norm2 += v2[i] * v2[i];
+	}
+
+	norm1 = sqrt(norm1);
+	norm2 = sqrt(norm2);
+
+	if (norm1 == 0 || norm2 == 0) {
+		return 0; // 예외 처리: 벡터의 크기가 0인 경우
+	}
+
+	return 1 - (dot_product / (norm1 * norm2));
+}
+
+// 가장 가까운 이웃 찾기
+void find_nearest_neighbor(char* word, WordVector* word_vectors, int num_words, int dimension) {
+	float min_distance = INFINITY;
+	char nearest_neighbor[MAX_WORD_LENGTH] = "";
+
+	for (int i = 0; i < num_words; i++) {
+		if (strcmp(word_vectors[i].word, word) != 0) {
+			float distance = euclidean_distance(word_vectors[i].vector, word_vectors[i].vector, dimension);
+			if (distance < min_distance) {
+				min_distance = distance;
+				strcpy(nearest_neighbor, word_vectors[i].word);
+			}
+		}
+	}
+
+	printf("%s의 가장 가까운 이웃: %s\n", word, nearest_neighbor);
+}
+*/
