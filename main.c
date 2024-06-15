@@ -7,12 +7,15 @@
 #include <time.h>
 #include <Windows.h>
 #include <omp.h>
-
-#define EPOCHS 100 // 에포크 수
-#define VOCAB_SIZE 600 // 최대 d어휘 크기
+/*
+#include </Users/user/source/repos/ai/ai/tensorflow/c/c_api.h>
+#include </Users/user/source/repos/ai/ai/tensorflow/c/tf_buffer.h>
+*/
+#define EPOCHS 1 // 에포크 수
+#define VOCAB_SIZE 650 // 최대 d어휘 크기
 #define EMBEDDING_SIZE 100 // 단어 임베딩 크기
-#define WINDOW_SIZE 8 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
-#define LEARNING_RATE 0.1 // 학습률
+#define WINDOW_SIZE 2 // Skip-gram 모델에서의 컨텍스트 윈도우 크기
+#define LEARNING_RATE 0.5 // 학습률
 #define MAX_WORD_LENGTH 100
 #define MAX_WORDS 10000
 #define MAX_VECTOR_DIMENSION 300
@@ -74,7 +77,7 @@ void splitSentences(const char* text, FILE* outputFile); //1
 int tokenize(); //2
 void tokenizeWords(const char* text, FILE* outputFile);
 int isStopword(const char* word); //3
-Pair* generatePairs(const char* filename, int* pairCount); //4
+Pair* generatePairs(const char* filename, int* pairCount, int stopwords_removed); //4
 
 void train(Pair* pairs, int pairCount, int vocabSize); //5
 void saveVectors(double vectors[VOCAB_SIZE][EMBEDDING_SIZE], const char* filename);
@@ -93,13 +96,14 @@ Word findMaxTfidfWord(Word* words, int wordCount);
 void computeSentenceVectors(const char* filename, Word* words, int wordCount, SentenceVector* sentenceVectors, int* sentenceCount); //7
 void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, const char* filename);
 
-float euclidean_distance(float* v1, float* v2, int dimension);
-void find_nearest_neighbor(char* word, WordVector* word_vectors, int num_words, int dimension);
-
+double euclideanDistance(float* v1, float* v2, int dimension);
+void findNearestNeighbor(char* word, WordVector* word_vectors, int num_words, int dimension);
+double cosineSimilarity(float* v1, float* v2, int dimension);
 
 //continue, else if, 전역변수 <-- 쓰면안됨
 
 int main() {
+	//printf("TensorFlow lib version: %s", TF_Version());
 	// 0. 입력
 	printf("Reading dataset.txt");
 	FILE* inputFile = fopen("dataset.txt", "r"); // dataset.txt 파일을 읽기 모드로
@@ -142,7 +146,6 @@ int main() {
 	}
 
 	// 3. 정제 <- ㅗㅗ
-	/*
 	printf("Removing stopword from word_tokenized.txt\n");
 	FILE* word_file = fopen("word_tokenized.txt", "r"); // 파일 읽읽
 	if (word_file == NULL) {
@@ -170,12 +173,12 @@ int main() {
 	}
 	fclose(output_word_file);
 	printf("\rRemoved %d stopwords \r\n", stopwords_removed);
-	*/
+
 
 	// 4. 쌍연산
 	printf("Generating pairs from word_tokenized.txt\n");
 	int pairCount;
-	Pair* pairs = generatePairs("word_tokenized.txt", &pairCount); // word_tokenized.txt에서 쌍 생성
+	Pair* pairs = generatePairs("word_tokenized.txt", &pairCount, stopwords_removed); // word_tokenized.txt에서 쌍 생성
 	if (pairs == NULL) {
 		return 1;
 	}
@@ -194,7 +197,7 @@ int main() {
 	computeTfidf("word_tokenized.txt", words, &wordCount); // TF-IDF 값을 계산해서
 	saveTfidf(words, wordCount, "weight.txt"); // weight.txt에 저장
 	Word maxWord = findMaxTfidfWord(words, wordCount); // TF-IDF 1등 찾기
-	printf("Word with highest TF-IDF: %s (%.16f)\n", maxWord.word, maxWord.tfidf);
+	printf("Word with highest TF-IDF: %s %lf %p (%.16f)\n", maxWord.word, *maxWord.vector, maxWord.vector, maxWord.tfidf);
 
 	// 7. 문장 임베딩
 	printf("Computing sentence vectors\n");
@@ -205,9 +208,34 @@ int main() {
 	saveSentenceVectors(sentenceVectors, sentenceCount, "sentence_vectors.txt");
 
 	// 8. 유클라디안 스칼라곱을 이용해 벡터의 코사인값 유도
+	/*
+	char filename[] = "word_vectors.txt";
+	WordVector wordVectors[MAX_WORDS];
+	int numWords;
 
-	// 9. centeroid를 바탕으로 문장 cos 유사도 계산 -> centeroid와 유사한 벡터 산출
+	FILE* outfile = fopen("cosine_similarities.txt", "w");
+	if (outfile == NULL) {
+		printf("파일을 생성할 수 없습니다.\n");
+		return 1;
+	}
 
+	float cosineSimilarity;
+	for (int i = 0; i < numWords; i++) {
+		for (int j = 0; j < numWords; j++) {
+			if (i != j) {
+				cosineSimilarity = 0.0;
+				for (int k = 0; k < MAX_VECTOR_DIMENSION; k++) {
+					cosineSimilarity += wordVectors[i].vector[k] * wordVectors[j].vector[k];
+				}
+				cosineSimilarity /= (sqrt(pow(euclideanDistance(wordVectors[i].vector, wordVectors[i].vector, MAX_VECTOR_DIMENSION), 2)) * sqrt(pow(euclideanDistance(wordVectors[j].vector, wordVectors[j].vector, MAX_VECTOR_DIMENSION), 2)));
+
+				fprintf(outfile, "%s\t%s\t%f\n", wordVectors[i].word, wordVectors[j].word, cosineSimilarity);
+			}
+		}
+	}
+	fclose(outfile);
+	*/
+	// 9. centeroid를 바탕으로 문장 cos 유사도 계산 -> Word maxWord 와 유사한 벡터 산출
 
 	return 0;
 }
@@ -258,7 +286,6 @@ void splitSentences(const char* text, FILE* outputFile) {
 				perror("Error allocating memory for sentence");
 				return;
 			}
-
 			strncpy(sentence, start, len);
 			sentence[len] = '\0';
 			fprintf(outputFile, "%d %s\n", sentenceNum, sentence);
@@ -339,7 +366,8 @@ int isStopword(const char* word) {
 }
 
 //텍스트 파일을 읽어서 단어 쌍 생성, 생성된 쌍을 배열로 반환
-Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 텍스트 파일명, pairCount = 생성된 쌍의 수
+Pair* generatePairs(const char* filename, int* pairCount, int stopwords_removed) { //filename = 읽을 텍스트 파일명, pairCount = 생성된 쌍의 수
+	//파일 열기
 	FILE* file = fopen(filename, "r");
 	if (file == NULL) {
 		perror("Error opening tokenized.txt");
@@ -348,9 +376,11 @@ Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 
 
 	char line[256];
 	int* words = NULL;
+	int numOfWord = 256 - stopwords_removed;
 	int wordCount = 0;
 	size_t wordsAllocSize = 1024;
 
+	//배열 초기 크기로 할당
 	words = (int*)malloc(sizeof(int) * wordsAllocSize);
 	if (words == NULL) {
 		perror("Error allocating memory for words");
@@ -358,10 +388,10 @@ Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 
 		return NULL;
 	}
 
-	while (fgets(line, sizeof(line), file)) {
+	while (fgets(line, sizeof(line), file)) { //fgets로 한 줄 씩 읽기
 		int index;
 		char word[256];
-		if (sscanf(line, "%d %s", &index, word) != 2) {
+		if (sscanf(line, "%d %s", &index, word) != 2) { //sscanf로 index, word 추출
 			fprintf(stderr, "Error parsing line: %s\n", line);
 			free(words);
 			fclose(file);
@@ -369,27 +399,25 @@ Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 
 		}
 
 		if (wordCount >= wordsAllocSize) {
-			wordsAllocSize *= 2;
+			wordsAllocSize *= 2; //words가 다 차면 realloc로 2배 ㄱㄱ
 
 			if (words == NULL) {
 				perror("Error reallocating memory for words");
 				fclose(file);
 				return NULL;
-			}
-			else {
-
+			} else {
 				words = (int*)realloc(words, sizeof(int) * wordsAllocSize);
 			}
 		}
-		words[wordCount] = index;
+		words[wordCount] = index; //단어 인덱스를 words배열에 저장
 		wordCount++;
 	}
 	fclose(file);
 
+	//Pair 구조체배열을 초기 크기로 할당
 	Pair* pairs = NULL;
 	size_t pairsAllocSize = 1024;
 	*pairCount = 0;
-
 	pairs = (Pair*)malloc(sizeof(Pair) * pairsAllocSize);
 	if (pairs == NULL) {
 		perror("Error allocating memory for pairs");
@@ -397,10 +425,11 @@ Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 
 		return NULL;
 	}
 
+	//단어 쌍 생성
 	for (int i = 0; i < wordCount; i++) {
-		for (int j = -WINDOW_SIZE; j <= WINDOW_SIZE; j++) {
+		for (int j = -WINDOW_SIZE; j <= WINDOW_SIZE; j++) { //각 단어에 대해 WINDOW_SIZE 범위 내의 주변 단어들과 단어쌍 생성
 			if (j != 0 && (i + j) >= 0 && (i + j) < wordCount) {
-				if (*pairCount >= pairsAllocSize) {
+				if (*pairCount >= pairsAllocSize) { //pairs가 다 차면 realloc로 2배 ㄱㄱ
 					pairsAllocSize *= 2;
 					pairs = (Pair*)realloc(pairs, sizeof(Pair) * pairsAllocSize);
 					if (pairs == NULL) {
@@ -409,7 +438,7 @@ Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 
 						return NULL;
 					}
 				}
-				pairs[*pairCount].target = words[i];
+				pairs[*pairCount].target = words[i]; //쌍을 pairs에 저장
 				pairs[*pairCount].context = words[i + j];
 				(*pairCount)++;
 			}
@@ -450,7 +479,6 @@ void train(Pair* pairs, int pairCount, int vocabSize) { //pairs = 학습할 단�
 #pragma omp atomic
 				outputVectors[context][k] -= LEARNING_RATE * error * inputVectors[target][k];
 			}
-
 			// 프로그레스바 출력
 #pragma omp single //<-- 단일 스레드에서 처리
 			printProgressBar(epoch + 1, i + 1, pairCount);
@@ -647,7 +675,7 @@ void printProgressBar(int epoch, int current, int total) {
 	fflush(stdout);
 
 	if (current == total) {
-		printf("Epoch %d: completed.                                                          \r", epoch);
+		printf("Epoch %d: completed.                                                                     \r", epoch);
 	}
 }
 
@@ -859,15 +887,22 @@ void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, con
 	fclose(file);
 }
 
+//유클리드 거리 계산
+double euclideanDistance(float* v1, float* v2, int dimension) {
+	float sum = 0.0;
+	for (int i = 0; i < dimension; i++) {
+		sum += pow(v1[i] - v2[i], 2);
+	}
+	return sqrt(sum);
+}
+
 //코사인 유사도 계산
-/*
-void cosine_similarity(float* v1, float* v2, int dimension) {
-	float dot_product = 0.0;
-	float norm1 = 0.0;
-	float norm2 = 0.0;
+double cosineSimilarity(float* v1, float* v2, int dimension) {
+	float dotProduct = 0.0;
+	float norm1, norm2 = 0.0;
 
 	for (int i = 0; i < dimension; i++) {
-		dot_product += v1[i] * v2[i];
+		dotProduct += v1[i] * v2[i];
 		norm1 += v1[i] * v1[i];
 		norm2 += v2[i] * v2[i];
 	}
@@ -875,28 +910,25 @@ void cosine_similarity(float* v1, float* v2, int dimension) {
 	norm1 = sqrt(norm1);
 	norm2 = sqrt(norm2);
 
-	if (norm1 == 0 || norm2 == 0) {
-		return 0; // 예외 처리: 벡터의 크기가 0인 경우
+	if (norm1 == 0 || norm2 == 0) { //벡터의 크기가 0인 경우
+		return 0;
 	}
-
-	return 1 - (dot_product / (norm1 * norm2));
+	return (1 - (dotProduct / (norm1 * norm2)));
 }
 
 // 가장 가까운 이웃 찾기
-void find_nearest_neighbor(char* word, WordVector* word_vectors, int num_words, int dimension) {
-	float min_distance = INFINITY;
-	char nearest_neighbor[MAX_WORD_LENGTH] = "";
+void findNearestNeighbor(char* word, WordVector* word_vectors, int num_words, int dimension) {
+	float minDistance = INFINITY;
+	char nearestNeighbor[MAX_WORD_LENGTH] = "";
 
 	for (int i = 0; i < num_words; i++) {
 		if (strcmp(word_vectors[i].word, word) != 0) {
-			float distance = euclidean_distance(word_vectors[i].vector, word_vectors[i].vector, dimension);
-			if (distance < min_distance) {
-				min_distance = distance;
-				strcpy(nearest_neighbor, word_vectors[i].word);
+			float distance = euclideanDistance(word_vectors[i].vector, word_vectors[i].vector, dimension);
+			if (distance < minDistance) {
+				minDistance = distance;
+				strcpy(nearestNeighbor, word_vectors[i].word);
 			}
 		}
 	}
-
-	printf("%s의 가장 가까운 이웃: %s\n", word, nearest_neighbor);
+	printf("%s's nearest neighbor: %s\n", word, nearestNeighbor);
 }
-*/
