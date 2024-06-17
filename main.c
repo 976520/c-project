@@ -8,8 +8,8 @@
 #include <Windows.h>
 #include <omp.h>
 
-//#include </Users/user/source/repos/ai/ai/tensorflow/c/c_api.h>
-//#include </Users/user/source/repos/ai/ai/tensorflow/c/tf_buffer.h>
+#include </Users/user/source/repos/ai/ai/tensorflow/c/c_api.h>
+#include </Users/user/source/repos/ai/ai/tensorflow/c/tf_buffer.h>
 
 #define EPOCHS 100 // 에포크 수
 #define VOCAB_SIZE 650 // 최대 d어휘 크기
@@ -18,7 +18,7 @@
 #define LEARNING_RATE 0.5 // 학습률
 #define MAX_WORD_LENGTH 100
 #define MAX_WORDS 10000
-#define MAX_VECTOR_DIMENSION 300
+#define MAX_VECTOR_DIMENSION 300 // 초ㅓㅣ대 벡터 차원
 
 // 타겟 단어와 컨텍스트 단어 쌍을 나타내느 구조체 ?
 typedef struct Pair {
@@ -98,11 +98,12 @@ void saveSentenceVectors(SentenceVector* sentenceVectors, int sentenceCount, con
 
 double euclideanDistance(float* v1, float* v2, int dimension);
 void findNearestNeighbor(char* word, WordVector* word_vectors, int num_words, int dimension);
-double cosineSimilarity(float* v1, float* v2, int dimension);
+double cosineSimilarity(double* v1, double* v2, int dimension);
 
 //continue, else if, 전역변수 <-- 쓰면안됨
 
 int main() {
+	setbuf(stdout, NULL);
 	//printf("TensorFlow lib version: %s", TF_Version());
 	// 0. 입력
 	printf("Reading dataset.txt");
@@ -175,7 +176,6 @@ int main() {
 	fclose(output_word_file);
 	printf("\rRemoved %d stopwords \r\n", stopwords_removed);
 	*/
-
 	// 4. 쌍연산
 	printf("Generating pairs from word_tokenized.txt\n");
 	int pairCount;
@@ -209,36 +209,27 @@ int main() {
 	saveSentenceVectors(sentenceVectors, sentenceCount, "sentence_vectors.txt");
 
 	// 8. 유클라디안 스칼라곱을 이용해 벡터의 코사인값 유도
-	/*
 	char filename[] = "word_vectors.txt";
 	WordVector wordVectors[MAX_WORDS];
-	int numWords;
+	int numWords = 0;
 
 	FILE* outfile = fopen("cosine_similarities.txt", "w");
 	if (outfile == NULL) {
-		printf("파일을 생성할 수 없습니다.\n");
+		printf("Error opening cosine_similarities.txt\n");
 		return 1;
 	}
 
-	float cosineSimilarity;
 	for (int i = 0; i < numWords; i++) {
 		for (int j = 0; j < numWords; j++) {
 			if (i != j) {
-				cosineSimilarity = 0.0;
-				for (int k = 0; k < MAX_VECTOR_DIMENSION; k++) {
-					cosineSimilarity += wordVectors[i].vector[k] * wordVectors[j].vector[k];
-				}
-				cosineSimilarity /= (sqrt(pow(euclideanDistance(wordVectors[i].vector, wordVectors[i].vector, MAX_VECTOR_DIMENSION), 2)) * sqrt(pow(euclideanDistance(wordVectors[j].vector, wordVectors[j].vector, MAX_VECTOR_DIMENSION), 2)));
-
-				fprintf(outfile, "%s\t%s\t%f\n", wordVectors[i].word, wordVectors[j].word, cosineSimilarity);
+				double cosineSim = cosineSimilarity(wordVectors[i].vector, wordVectors[j].vector, MAX_VECTOR_DIMENSION);
+				fprintf(outfile, "%s\t%s\t%f\n", wordVectors[i].word, wordVectors[j].word, cosineSim);
 			}
 		}
 	}
 	fclose(outfile);
-	*/
-	// 9. centeroid를 바탕으로 문장 cos 유사도 계산 -> Word maxWord 와 유사한 벡터 산출
 
-	return 0;
+	// 9. centeroid를 바탕으로 문장 cos 유사도 계산 -> Word maxWord 와 유사한 벡터 산출
 }
 
 //문장 단위로 토큰화
@@ -391,7 +382,7 @@ Pair* generatePairs(const char* filename, int* pairCount) { //filename = 읽을 
 		int index;
 		char word[256];
 		if (sscanf(line, "%d %s", &index, word) != 2) { //sscanf로 index, word 추출
-			fprintf(stderr, "Error parsing line: %d %s\n", &index, word);
+			fprintf(stderr, "Error parsing line: %d %p %s\n", index, &index, word);
 			free(words);
 			fclose(file);
 			return NULL;
@@ -792,7 +783,6 @@ Word findMaxTfidfWord(Word* words, int wordCount) {
 	return maxWord;
 }
 
-
 //각 문장의 벡터를 계산하여 sentenceVectors 배열에 저장
 void computeSentenceVectors(const char* filename, Word* words, int wordCount, SentenceVector* sentenceVectors, int* sentenceCount) {
 	FILE* file = fopen(filename, "r");
@@ -855,23 +845,21 @@ double euclideanDistance(float* v1, float* v2, int dimension) {
 }
 
 //코사인 유사도 계산
-double cosineSimilarity(float* v1, float* v2, int dimension) {
-	float dotProduct = 0.0;
-	float norm1, norm2 = 0.0;
+double cosineSimilarity(double* v1, double* v2, int dimension) {
+	double dotProduct = 0.0;
+	double normA = 0.0;
+	double normB = 0.0;
 
 	for (int i = 0; i < dimension; i++) {
 		dotProduct += v1[i] * v2[i];
-		norm1 += v1[i] * v1[i];
-		norm2 += v2[i] * v2[i];
+		normA += v1[i] * v1[i];
+		normB += v2[i] * v2[i];
 	}
 
-	norm1 = sqrt(norm1);
-	norm2 = sqrt(norm2);
-
-	if (norm1 == 0 || norm2 == 0) { //벡터의 크기가 0인 경우
+	if (normA == 0 || normB == 0) { //벡터의 크기가 0인 경우
 		return 0;
 	}
-	return (1 - (dotProduct / (norm1 * norm2)));
+	return dotProduct / (sqrt(normA) * sqrt(normB));
 }
 
 // 가장 가까운 이웃 찾기
