@@ -1,4 +1,5 @@
 ## 1. 컴파일
+
  `gcc -o main main.c`
 ---
 
